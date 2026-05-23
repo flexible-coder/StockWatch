@@ -1,10 +1,22 @@
 ﻿<template>
-  <div v-if="stockConfig.enabled" class="stock-widget-container" :style="widgetPositionStyle">
-    <div ref="stockCardRef" class="stock-card" :class="{ 'is-expanded': isExpanded }">
+  <div
+    v-if="stockConfig.enabled"
+    class="stock-widget-container"
+    :style="widgetPositionStyle"
+  >
+    <div
+      ref="stockCardRef"
+      class="stock-card"
+      :class="{ 'is-expanded': isExpanded }"
+    >
       <div class="minimal-content" @click="isExpanded = !isExpanded">
         <span class="stock-name">{{ stockData.name }}</span>
-        <span class="stock-percent" :class="[trendClass, { 'price-flash': shouldFlash }]">
-          {{ stockData.percent > 0 ? "+" : "" }}{{ stockData.percent.toFixed(2) }}%
+        <span
+          class="stock-percent"
+          :class="[trendClass, { 'price-flash': shouldFlash }]"
+        >
+          {{ stockData.percent > 0 ? "+" : ""
+          }}{{ stockData.percent.toFixed(2) }}%
         </span>
       </div>
 
@@ -26,7 +38,11 @@
             aria-hidden="true"
             :style="{ top: `${volumeDividerTop}px` }"
           ></div>
-          <div v-if="priceAxisLabels.length" class="price-axis-overlay" aria-hidden="true">
+          <div
+            v-if="priceAxisLabels.length"
+            class="price-axis-overlay"
+            aria-hidden="true"
+          >
             <span
               v-for="label in priceAxisLabels"
               :key="label.priceText"
@@ -37,7 +53,11 @@
               {{ label.priceText }}
             </span>
           </div>
-          <div v-if="priceAxisLabels.length" class="percent-axis-overlay" aria-hidden="true">
+          <div
+            v-if="priceAxisLabels.length"
+            class="percent-axis-overlay"
+            aria-hidden="true"
+          >
             <span
               v-for="label in priceAxisLabels"
               :key="label.percentText"
@@ -50,20 +70,39 @@
           </div>
         </div>
 
-        <div ref="tooltipRef" class="floating-tooltip" :class="{ visible: !!hoverInfo }">
-          <div class="tooltip-time">
+        <div
+          ref="tooltipRef"
+          class="floating-tooltip"
+          :class="{ visible: !!hoverInfo }"
+        >
+          <div class="tooltip-price tooltip-time">
             <span>时间：</span>
             {{ hoverInfo?.time }}
           </div>
-          <div class="tooltip-price" :class="hoverInfo ? getTrendClassByPercent(hoverInfo.percent) : 'flat'">
+          <div
+            class="tooltip-price"
+            :class="
+              hoverInfo ? getTrendClassByPercent(hoverInfo.percent) : 'flat'
+            "
+          >
             <span class="tooltip-label">价格：</span>
             <span> {{ hoverInfo?.price.toFixed(2) }}</span>
           </div>
-          <div class="tooltip-price avg">
+          <div
+            class="tooltip-price"
+            :class="
+              hoverInfo ? getTrendClassByPercent(hoverInfo.percent) : 'flat'
+            "
+          >
             <span class="tooltip-label">均价：</span>
             <span>{{ hoverInfo?.avgPrice.toFixed(2) }}</span>
           </div>
-          <div class="tooltip-price" :class="hoverInfo ? getTrendClassByPercent(hoverInfo.percent) : 'flat'">
+          <div
+            class="tooltip-price"
+            :class="
+              hoverInfo ? getTrendClassByPercent(hoverInfo.percent) : 'flat'
+            "
+          >
             <span class="tooltip-label">涨跌幅：</span>
             <span>{{ hoverPercentText }}</span>
           </div>
@@ -148,7 +187,8 @@ const MORNING_SESSION_START_MINUTE = 9 * 60 + 30;
 const MORNING_SESSION_END_MINUTE = 11 * 60 + 30;
 const AFTERNOON_SESSION_START_MINUTE = 13 * 60;
 const AFTERNOON_SESSION_END_MINUTE = 15 * 60;
-const MORNING_SESSION_POINT_COUNT = MORNING_SESSION_END_MINUTE - MORNING_SESSION_START_MINUTE + 1;
+const MORNING_SESSION_POINT_COUNT =
+  MORNING_SESSION_END_MINUTE - MORNING_SESSION_START_MINUTE + 1;
 const LAST_TRADING_MINUTE_INDEX = 240;
 const TIME_SCALE_EDGE_PADDING_BARS = 8;
 const MIN_PRICE_RANGE_RATIO = 0.01;
@@ -160,7 +200,9 @@ const OFF_HOURS_POLL_INTERVAL_MS = 1000 * 60 * 2;
 const HIDDEN_POLL_INTERVAL_MS = 1000 * 60 * 3;
 
 type SeriesPoint = LineData<UTCTimestamp> | WhitespaceData<UTCTimestamp>;
-type VolumeSeriesPoint = HistogramData<UTCTimestamp> | WhitespaceData<UTCTimestamp>;
+type VolumeSeriesPoint =
+  | HistogramData<UTCTimestamp>
+  | WhitespaceData<UTCTimestamp>;
 
 const stockConfig = ref<StockConfig>(DEFAULT_STOCK_CONFIG);
 const isExpanded = ref(DEFAULT_STOCK_CONFIG.defaultExpanded);
@@ -192,7 +234,10 @@ let fetchController: AbortController | null = null;
 let isMounted = false;
 let lastAppliedTrendColor = "";
 
-const fullTradingMinuteIndexes = Array.from({ length: LAST_TRADING_MINUTE_INDEX + 1 }, (_, minuteIndex) => minuteIndex);
+const fullTradingMinuteIndexes = Array.from(
+  { length: LAST_TRADING_MINUTE_INDEX + 1 },
+  (_, minuteIndex) => minuteIndex,
+);
 
 const getTrendClassByPercent = (percent: number): "up" | "down" | "flat" => {
   if (percent > 0) return "up";
@@ -206,8 +251,12 @@ const getTrendColorByPercent = (percent: number): string => {
   return "#758696";
 };
 
-const trendClass = computed(() => getTrendClassByPercent(stockData.value.percent));
-const trendColor = computed(() => getTrendColorByPercent(stockData.value.percent));
+const trendClass = computed(() =>
+  getTrendClassByPercent(stockData.value.percent),
+);
+const trendColor = computed(() =>
+  getTrendColorByPercent(stockData.value.percent),
+);
 const widgetPositionStyle = computed(() => ({
   top: `${stockConfig.value.position.top}px`,
   right: `${stockConfig.value.position.right}px`,
@@ -219,11 +268,20 @@ const latestTime = computed(() => {
 });
 
 const displayTime = computed(() => hoverInfo.value?.time ?? latestTime.value);
-const displayPrice = computed(() => hoverInfo.value?.price ?? stockData.value.price);
-const displayPercent = computed(() => hoverInfo.value?.percent ?? stockData.value.percent);
-const displayTrendClass = computed(() => getTrendClassByPercent(displayPercent.value));
-const formatSignedPercent = (percent: number): string => `${percent > 0 ? "+" : ""}${percent.toFixed(2)}%`;
-const displayPercentText = computed(() => formatSignedPercent(displayPercent.value));
+const displayPrice = computed(
+  () => hoverInfo.value?.price ?? stockData.value.price,
+);
+const displayPercent = computed(
+  () => hoverInfo.value?.percent ?? stockData.value.percent,
+);
+const displayTrendClass = computed(() =>
+  getTrendClassByPercent(displayPercent.value),
+);
+const formatSignedPercent = (percent: number): string =>
+  `${percent > 0 ? "+" : ""}${percent.toFixed(2)}%`;
+const displayPercentText = computed(() =>
+  formatSignedPercent(displayPercent.value),
+);
 const hoverPercentText = computed(() => {
   if (!hoverInfo.value) return "";
   return formatSignedPercent(hoverInfo.value.percent);
@@ -233,7 +291,9 @@ const buildFullTradingSeriesData = (
   points: IntradayPoint[],
   valueGetter: (point: IntradayPoint) => number,
 ): SeriesPoint[] => {
-  const pointByMinuteIndex = new Map(points.map((point) => [point.minuteIndex, point]));
+  const pointByMinuteIndex = new Map(
+    points.map((point) => [point.minuteIndex, point]),
+  );
 
   return fullTradingMinuteIndexes.map((minuteIndex) => {
     const time = minuteIndexToSyntheticTimestamp(minuteIndex);
@@ -242,8 +302,12 @@ const buildFullTradingSeriesData = (
   });
 };
 
-const buildVolumeSeriesData = (points: IntradayPoint[]): VolumeSeriesPoint[] => {
-  const pointByMinuteIndex = new Map(points.map((point) => [point.minuteIndex, point]));
+const buildVolumeSeriesData = (
+  points: IntradayPoint[],
+): VolumeSeriesPoint[] => {
+  const pointByMinuteIndex = new Map(
+    points.map((point) => [point.minuteIndex, point]),
+  );
 
   return fullTradingMinuteIndexes.map((minuteIndex) => {
     const time = minuteIndexToSyntheticTimestamp(minuteIndex);
@@ -252,7 +316,8 @@ const buildVolumeSeriesData = (points: IntradayPoint[]): VolumeSeriesPoint[] => 
 
     const previousPoint = pointByMinuteIndex.get(minuteIndex - 1);
     const comparePrice = previousPoint?.value ?? preClosePrice.value;
-    const color = comparePrice > 0 && point.value < comparePrice ? "#089981" : "#f23645";
+    const color =
+      comparePrice > 0 && point.value < comparePrice ? "#089981" : "#f23645";
 
     return {
       time,
@@ -262,15 +327,28 @@ const buildVolumeSeriesData = (points: IntradayPoint[]): VolumeSeriesPoint[] => 
   });
 };
 
-const seriesData = computed<SeriesPoint[]>(() => buildFullTradingSeriesData(rawData.value, (point) => point.value));
-const avgSeriesData = computed<SeriesPoint[]>(() => buildFullTradingSeriesData(rawData.value, (point) => point.avgPrice));
-const volumeSeriesData = computed<VolumeSeriesPoint[]>(() => buildVolumeSeriesData(rawData.value));
-const pointIndex = computed(() => new Map(rawData.value.map((point) => [point.time, point])));
+const seriesData = computed<SeriesPoint[]>(() =>
+  buildFullTradingSeriesData(rawData.value, (point) => point.value),
+);
+const avgSeriesData = computed<SeriesPoint[]>(() =>
+  buildFullTradingSeriesData(rawData.value, (point) => point.avgPrice),
+);
+const volumeSeriesData = computed<VolumeSeriesPoint[]>(() =>
+  buildVolumeSeriesData(rawData.value),
+);
+const pointIndex = computed(
+  () => new Map(rawData.value.map((point) => [point.time, point])),
+);
 
-const calculateSymmetricPriceRange = (points: IntradayPoint[], preClose: number): SymmetricPriceRange | null => {
+const calculateSymmetricPriceRange = (
+  points: IntradayPoint[],
+  preClose: number,
+): SymmetricPriceRange | null => {
   if (preClose <= 0) return null;
 
-  const validPrices = points.map((point) => point.value).filter((price) => Number.isFinite(price) && price > 0);
+  const validPrices = points
+    .map((point) => point.value)
+    .filter((price) => Number.isFinite(price) && price > 0);
   const minDiff = Math.max(preClose * MIN_PRICE_RANGE_RATIO, 0.01);
 
   if (validPrices.length === 0) {
@@ -282,7 +360,11 @@ const calculateSymmetricPriceRange = (points: IntradayPoint[], preClose: number)
 
   const maxPrice = Math.max(...validPrices);
   const minPrice = Math.min(...validPrices);
-  const maxDiff = Math.max(Math.abs(maxPrice - preClose), Math.abs(minPrice - preClose), minDiff);
+  const maxDiff = Math.max(
+    Math.abs(maxPrice - preClose),
+    Math.abs(minPrice - preClose),
+    minDiff,
+  );
 
   return {
     minValue: preClose - maxDiff,
@@ -290,7 +372,9 @@ const calculateSymmetricPriceRange = (points: IntradayPoint[], preClose: number)
   };
 };
 
-const yAxisPriceRange = computed(() => calculateSymmetricPriceRange(rawData.value, preClosePrice.value));
+const yAxisPriceRange = computed(() =>
+  calculateSymmetricPriceRange(rawData.value, preClosePrice.value),
+);
 
 const getSymmetricAutoscaleInfo = () => {
   const range = yAxisPriceRange.value;
@@ -332,7 +416,9 @@ const syncAxisOverlayLabels = () => {
   }
 
   const range = yAxisPriceRange.value;
-  const dividerY = range ? priceLineSeries.priceToCoordinate(range.minValue) : null;
+  const dividerY = range
+    ? priceLineSeries.priceToCoordinate(range.minValue)
+    : null;
   volumeDividerTop.value = dividerY === null ? null : dividerY;
 
   priceAxisLabels.value = getAxisLabelPriceValues().flatMap((price) => {
@@ -352,7 +438,12 @@ const syncAxisOverlayLabels = () => {
 const getTimestampFromTime = (time: Time | undefined): number | null => {
   if (time === undefined) return null;
   if (typeof time === "number") return time;
-  if (typeof time === "object" && "timestamp" in time && typeof time.timestamp === "number") return time.timestamp;
+  if (
+    typeof time === "object" &&
+    "timestamp" in time &&
+    typeof time.timestamp === "number"
+  )
+    return time.timestamp;
   return null;
 };
 
@@ -368,19 +459,31 @@ const syntheticTimestampToMinuteIndex = (timestamp: number): number | null => {
 };
 
 const shanghaiMinutesFromTimestamp = (timestamp: number): number => {
-  const shanghaiDate = new Date((timestamp + MARKET_UTC_OFFSET_HOURS * 3600) * 1000);
+  const shanghaiDate = new Date(
+    (timestamp + MARKET_UTC_OFFSET_HOURS * 3600) * 1000,
+  );
   return shanghaiDate.getUTCHours() * 60 + shanghaiDate.getUTCMinutes();
 };
 
-const shanghaiMinutesToTradingMinuteIndex = (minutes: number): number | null => {
-  if (minutes >= MORNING_SESSION_START_MINUTE && minutes <= MORNING_SESSION_END_MINUTE) {
+const shanghaiMinutesToTradingMinuteIndex = (
+  minutes: number,
+): number | null => {
+  if (
+    minutes >= MORNING_SESSION_START_MINUTE &&
+    minutes <= MORNING_SESSION_END_MINUTE
+  ) {
     return minutes - MORNING_SESSION_START_MINUTE;
   }
 
-  if (minutes >= AFTERNOON_SESSION_START_MINUTE && minutes <= AFTERNOON_SESSION_END_MINUTE) {
-    if (minutes === AFTERNOON_SESSION_END_MINUTE) return LAST_TRADING_MINUTE_INDEX;
+  if (
+    minutes >= AFTERNOON_SESSION_START_MINUTE &&
+    minutes <= AFTERNOON_SESSION_END_MINUTE
+  ) {
+    if (minutes === AFTERNOON_SESSION_END_MINUTE)
+      return LAST_TRADING_MINUTE_INDEX;
 
-    const minuteIndex = MORNING_SESSION_POINT_COUNT + (minutes - AFTERNOON_SESSION_START_MINUTE);
+    const minuteIndex =
+      MORNING_SESSION_POINT_COUNT + (minutes - AFTERNOON_SESSION_START_MINUTE);
     return minuteIndex <= LAST_TRADING_MINUTE_INDEX ? minuteIndex : null;
   }
 
@@ -388,11 +491,17 @@ const shanghaiMinutesToTradingMinuteIndex = (minutes: number): number | null => 
 };
 
 const timestampToTradingMinuteIndex = (timestamp: number): number | null => {
-  return shanghaiMinutesToTradingMinuteIndex(shanghaiMinutesFromTimestamp(timestamp));
+  return shanghaiMinutesToTradingMinuteIndex(
+    shanghaiMinutesFromTimestamp(timestamp),
+  );
 };
 
-const extractMarketMinutesFromDateTimeText = (dateTimeText: string): number | null => {
-  const fullDateTimeMatch = dateTimeText.match(/^\d{4}-\d{2}-\d{2}\s+(\d{2}):(\d{2})$/);
+const extractMarketMinutesFromDateTimeText = (
+  dateTimeText: string,
+): number | null => {
+  const fullDateTimeMatch = dateTimeText.match(
+    /^\d{4}-\d{2}-\d{2}\s+(\d{2}):(\d{2})$/,
+  );
   if (fullDateTimeMatch) {
     return Number(fullDateTimeMatch[1]) * 60 + Number(fullDateTimeMatch[2]);
   }
@@ -405,7 +514,9 @@ const extractMarketMinutesFromDateTimeText = (dateTimeText: string): number | nu
   return null;
 };
 
-const dateTimeTextToTradingMinuteIndex = (dateTimeText: string): number | null => {
+const dateTimeTextToTradingMinuteIndex = (
+  dateTimeText: string,
+): number | null => {
   const minutes = extractMarketMinutesFromDateTimeText(dateTimeText);
   if (typeof minutes !== "number") return null;
   return shanghaiMinutesToTradingMinuteIndex(minutes);
@@ -423,7 +534,10 @@ const formatMarketTimeFromMinuteIndex = (minuteIndex: number): string => {
   if (minuteIndex < MORNING_SESSION_POINT_COUNT) {
     return formatClockFromMinutes(MORNING_SESSION_START_MINUTE + minuteIndex);
   }
-  return formatClockFromMinutes(AFTERNOON_SESSION_START_MINUTE + (minuteIndex - MORNING_SESSION_POINT_COUNT));
+  return formatClockFromMinutes(
+    AFTERNOON_SESSION_START_MINUTE +
+      (minuteIndex - MORNING_SESSION_POINT_COUNT),
+  );
 };
 
 const formatMarketTimeFromDateTimeText = (dateTimeText: string): string => {
@@ -456,15 +570,22 @@ const formatAxisTimeFromChartTime = (time: Time | undefined): string => {
   return "";
 };
 
-const parseEastMoneyDateTimeToTimestamp = (dateTimeText: string): number | null => {
-  const fullDateTimeMatch = dateTimeText.match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})$/);
+const parseEastMoneyDateTimeToTimestamp = (
+  dateTimeText: string,
+): number | null => {
+  const fullDateTimeMatch = dateTimeText.match(
+    /^(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})$/,
+  );
   if (fullDateTimeMatch) {
     const year = Number(fullDateTimeMatch[1]);
     const month = Number(fullDateTimeMatch[2]);
     const day = Number(fullDateTimeMatch[3]);
     const hours = Number(fullDateTimeMatch[4]);
     const minutes = Number(fullDateTimeMatch[5]);
-    return Math.floor(Date.UTC(year, month - 1, day, hours - MARKET_UTC_OFFSET_HOURS, minutes) / 1000);
+    return Math.floor(
+      Date.UTC(year, month - 1, day, hours - MARKET_UTC_OFFSET_HOURS, minutes) /
+        1000,
+    );
   }
 
   const timeOnlyMatch = dateTimeText.match(/^(\d{2}):(\d{2})$/);
@@ -475,7 +596,10 @@ const parseEastMoneyDateTimeToTimestamp = (dateTimeText: string): number | null 
     const day = now.getUTCDate();
     const hours = Number(timeOnlyMatch[1]);
     const minutes = Number(timeOnlyMatch[2]);
-    return Math.floor(Date.UTC(year, month, day, hours - MARKET_UTC_OFFSET_HOURS, minutes) / 1000);
+    return Math.floor(
+      Date.UTC(year, month, day, hours - MARKET_UTC_OFFSET_HOURS, minutes) /
+        1000,
+    );
   }
 
   return null;
@@ -506,19 +630,32 @@ const getTrendAveragePrice = (fields: string[], price: number): number => {
   const volume = parseFiniteNumber(fields[5]);
   const amount = parseFiniteNumber(fields[6]);
   if (volume && amount && volume > 0) {
-    const isReasonableAverage = (value: number) => value > price * 0.2 && value < price * 5;
+    const isReasonableAverage = (value: number) =>
+      value > price * 0.2 && value < price * 5;
     const directAverage = amount / volume;
-    if (Number.isFinite(directAverage) && directAverage > 0 && isReasonableAverage(directAverage)) return directAverage;
+    if (
+      Number.isFinite(directAverage) &&
+      directAverage > 0 &&
+      isReasonableAverage(directAverage)
+    )
+      return directAverage;
 
     const handAverage = amount / (volume * 100);
-    if (Number.isFinite(handAverage) && handAverage > 0 && isReasonableAverage(handAverage)) return handAverage;
+    if (
+      Number.isFinite(handAverage) &&
+      handAverage > 0 &&
+      isReasonableAverage(handAverage)
+    )
+      return handAverage;
   }
 
   return price;
 };
 
 const getShanghaiNow = (): Date => {
-  return new Date(new Date().toLocaleString("en-US", { timeZone: MARKET_TIME_ZONE }));
+  return new Date(
+    new Date().toLocaleString("en-US", { timeZone: MARKET_TIME_ZONE }),
+  );
 };
 
 const isTradingSessionNow = (): boolean => {
@@ -534,7 +671,9 @@ const isTradingSessionNow = (): boolean => {
 
 const getNextPollInterval = (): number => {
   if (document.hidden) return HIDDEN_POLL_INTERVAL_MS;
-  return isTradingSessionNow() ? stockConfig.value.tradingPollIntervalMs : OFF_HOURS_POLL_INTERVAL_MS;
+  return isTradingSessionNow()
+    ? stockConfig.value.tradingPollIntervalMs
+    : OFF_HOURS_POLL_INTERVAL_MS;
 };
 
 const clearPollingTimer = () => {
@@ -587,8 +726,16 @@ const isSameRawData = (next: IntradayPoint[]): boolean => {
 
   const lastPrev = prev[prev.length - 1];
   const lastNext = next[next.length - 1];
-  if (lastPrev.realTime !== lastNext.realTime || lastPrev.value !== lastNext.value) return false;
-  if (lastPrev.avgPrice !== lastNext.avgPrice || lastPrev.volume !== lastNext.volume) return false;
+  if (
+    lastPrev.realTime !== lastNext.realTime ||
+    lastPrev.value !== lastNext.value
+  )
+    return false;
+  if (
+    lastPrev.avgPrice !== lastNext.avgPrice ||
+    lastPrev.volume !== lastNext.volume
+  )
+    return false;
   if (lastPrev.marketTime !== lastNext.marketTime) return false;
 
   const firstPrev = prev[0];
@@ -664,8 +811,14 @@ const applyVolumeSeriesData = (nextData: VolumeSeriesPoint[]) => {
 
 const syncPriceSeriesData = (next: IntradayPoint[]) => {
   if (!priceLineSeries) return;
-  const nextPriceData = buildFullTradingSeriesData(next, (point) => point.value);
-  const nextAvgData = buildFullTradingSeriesData(next, (point) => point.avgPrice);
+  const nextPriceData = buildFullTradingSeriesData(
+    next,
+    (point) => point.value,
+  );
+  const nextAvgData = buildFullTradingSeriesData(
+    next,
+    (point) => point.avgPrice,
+  );
   applySeriesData(nextPriceData);
   applyAvgSeriesData(nextAvgData);
   applyVolumeSeriesData(buildVolumeSeriesData(next));
@@ -684,7 +837,10 @@ const resetStockState = () => {
   volumeDividerTop.value = null;
   syncPreClosePriceLine();
   const emptyPriceData = buildFullTradingSeriesData([], (point) => point.value);
-  const emptyAvgData = buildFullTradingSeriesData([], (point) => point.avgPrice);
+  const emptyAvgData = buildFullTradingSeriesData(
+    [],
+    (point) => point.avgPrice,
+  );
   applySeriesData(emptyPriceData);
   applyAvgSeriesData(emptyAvgData);
   applyVolumeSeriesData(buildVolumeSeriesData([]));
@@ -694,7 +850,9 @@ const applyStockConfig = (nextConfig: Partial<StockConfig> | undefined) => {
   const normalizedConfig = normalizeStockConfig(nextConfig);
   const stockChanged = normalizedConfig.secid !== stockConfig.value.secid;
   const enabledChanged = normalizedConfig.enabled !== stockConfig.value.enabled;
-  const pollIntervalChanged = normalizedConfig.tradingPollIntervalMs !== stockConfig.value.tradingPollIntervalMs;
+  const pollIntervalChanged =
+    normalizedConfig.tradingPollIntervalMs !==
+    stockConfig.value.tradingPollIntervalMs;
 
   stockConfig.value = normalizedConfig;
 
@@ -717,10 +875,15 @@ const applyStockConfig = (nextConfig: Partial<StockConfig> | undefined) => {
   }
 };
 
-const handleStockConfigStorageChange = (changes: Record<string, chrome.storage.StorageChange>, areaName: string) => {
+const handleStockConfigStorageChange = (
+  changes: Record<string, chrome.storage.StorageChange>,
+  areaName: string,
+) => {
   if (areaName !== "sync") return;
 
-  const nextValue = changes[STOCK_CONFIG_STORAGE_KEY]?.newValue as Partial<StockConfig> | undefined;
+  const nextValue = changes[STOCK_CONFIG_STORAGE_KEY]?.newValue as
+    | Partial<StockConfig>
+    | undefined;
   if (!nextValue) return;
 
   applyStockConfig(nextValue);
@@ -759,7 +922,7 @@ const applyTooltipPosition = (x: number, y: number) => {
   const tooltip = tooltipRef.value;
   const containerRect = chartContainerRef.value.getBoundingClientRect();
 
-  const margin = 8;
+  const margin = 50;
   let left = x + margin;
   let top = y + margin;
 
@@ -806,8 +969,16 @@ const initChart = () => {
       timeFormatter: (time: Time) => formatMarketTimeFromChartTime(time),
     },
     grid: {
-      vertLines: { visible: true, color: "rgba(0,0,0,0.1)", style: LineStyle.Dotted },
-      horzLines: { visible: true, color: "rgba(0,0,0,0.1)", style: LineStyle.Dotted },
+      vertLines: {
+        visible: true,
+        color: "rgba(0,0,0,0.1)",
+        style: LineStyle.Dotted,
+      },
+      horzLines: {
+        visible: true,
+        color: "rgba(0,0,0,0.1)",
+        style: LineStyle.Dotted,
+      },
     },
     crosshair: {
       mode: CrosshairMode.Normal,
@@ -847,12 +1018,12 @@ const initChart = () => {
       },
     },
     timeScale: {
-      barSpacing:0,
+      barSpacing: 0,
       borderColor: "rgba(0,0,0,0.1)",
-      timeVisible:true,
+      timeVisible: true,
       fixLeftEdge: true,
       secondsVisible: false,
-      ticksVisible:false,
+      ticksVisible: false,
       tickMarkFormatter: (time: Time) => formatAxisTimeFromChartTime(time),
     },
     handleScroll: { vertTouchDrag: false },
@@ -920,7 +1091,9 @@ const initChart = () => {
       return;
     }
 
-    const priceData = param.seriesData.get(priceLineSeries) as { value?: number } | undefined;
+    const priceData = param.seriesData.get(priceLineSeries) as
+      | { value?: number }
+      | undefined;
     if (!priceData || typeof priceData.value !== "number") {
       hideHover();
       return;
@@ -943,7 +1116,8 @@ const initChart = () => {
       price: point.value,
       avgPrice: point.avgPrice,
       volume: point.volume,
-      percent: ((point.value - preClosePrice.value) / preClosePrice.value) * 100,
+      percent:
+        ((point.value - preClosePrice.value) / preClosePrice.value) * 100,
       x: param.point.x,
       y: param.point.y,
     };
@@ -1001,13 +1175,17 @@ const fetchIntradayData = async () => {
       const timestamp = parseEastMoneyDateTimeToTimestamp(timeStr);
       if (typeof timestamp !== "number") continue;
 
-      const minuteIndex = dateTimeTextToTradingMinuteIndex(timeStr) ?? timestampToTradingMinuteIndex(timestamp);
+      const minuteIndex =
+        dateTimeTextToTradingMinuteIndex(timeStr) ??
+        timestampToTradingMinuteIndex(timestamp);
       if (typeof minuteIndex !== "number") continue;
 
       parsedDataByMinute.set(minuteIndex, {
         time: minuteIndexToSyntheticTimestamp(minuteIndex),
         realTime: timestamp,
-        marketTime: formatMarketTimeFromDateTimeText(timeStr) || formatMarketTimeFromMinuteIndex(minuteIndex),
+        marketTime:
+          formatMarketTimeFromDateTimeText(timeStr) ||
+          formatMarketTimeFromMinuteIndex(minuteIndex),
         minuteIndex,
         value: price,
         avgPrice,
@@ -1016,7 +1194,9 @@ const fetchIntradayData = async () => {
       currentPrice = price;
     }
 
-    const parsedData = Array.from(parsedDataByMinute.values()).sort((a, b) => a.minuteIndex - b.minuteIndex);
+    const parsedData = Array.from(parsedDataByMinute.values()).sort(
+      (a, b) => a.minuteIndex - b.minuteIndex,
+    );
     if (!isSameRawData(parsedData)) {
       rawData.value = parsedData;
       syncPriceSeriesData(parsedData);
@@ -1108,7 +1288,7 @@ onUnmounted(() => {
 });
 </script>
 
-<style scoped>
+<style scoped lang="less">
 @keyframes priceBeat {
   0% {
     transform: scale(1);
@@ -1139,7 +1319,9 @@ onUnmounted(() => {
   right: 20px;
   top: 80px;
   z-index: 9999;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial,
+    sans-serif;
   color: #333;
   user-select: none;
 }

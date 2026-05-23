@@ -39,8 +39,12 @@ let searchController: AbortController | null = null;
 let searchSerial = 0;
 
 const isSidepanel = computed(() => props.surface === "sidepanel");
-const cardWidth = computed(() => (isSidepanel.value ? "min(100%, 560px)" : "390px"));
-const currentStockText = computed(() => `${config.value.name} ${config.value.code} · ${config.value.secid}`);
+const cardWidth = computed(() =>
+  isSidepanel.value ? "min(100%, 560px)" : "390px",
+);
+const currentStockText = computed(
+  () => `${config.value.name} ${config.value.code} · ${config.value.secid}`,
+);
 const refreshSeconds = computed({
   get: () => String(Math.round(config.value.tradingPollIntervalMs / 1000)),
   set: (value: string) => {
@@ -63,7 +67,9 @@ const setSearchResults = (results: StockSearchResult[]) => {
   }));
 
   searchOptions.value = options;
-  optionByValue.value = Object.fromEntries(options.map((option) => [option.value, option.stock]));
+  optionByValue.value = Object.fromEntries(
+    options.map((option) => [option.value, option.stock]),
+  );
 };
 
 const loadConfig = async () => {
@@ -88,7 +94,9 @@ const updateConfig = async (patch: Partial<StockConfig>) => {
   }
 };
 
-const applyStock = async (stock: Pick<StockConfig, "secid" | "code" | "name">) => {
+const applyStock = async (
+  stock: Pick<StockConfig, "secid" | "code" | "name">,
+) => {
   await updateConfig({
     secid: stock.secid,
     code: stock.code,
@@ -99,8 +107,8 @@ const applyStock = async (stock: Pick<StockConfig, "secid" | "code" | "name">) =
 };
 
 const handleSearch = async (keyword: string) => {
-  console.log('AAAAAAAAA');
-  
+  console.log("AAAAAAAAA");
+
   searchText.value = keyword;
 
   const trimmed = keyword.trim();
@@ -150,8 +158,8 @@ const handleSelect = (value: string) => {
   void applyStock(stock);
 };
 
-const applyCurrentInput = async (value: string, event: Event ) => {
-  console.log('BBBBBBBBBBB',event);
+const applyCurrentInput = async (value: string, event: Event) => {
+  console.log("BBBBBBBBBBB", event);
   const keyword = (value ?? searchText.value).trim();
   if (!keyword) return;
 
@@ -212,10 +220,15 @@ const updatePositionRight = (value: number | string | null) => {
   });
 };
 
-const handleStorageChange = (changes: Record<string, chrome.storage.StorageChange>, areaName: string) => {
+const handleStorageChange = (
+  changes: Record<string, chrome.storage.StorageChange>,
+  areaName: string,
+) => {
   if (areaName !== "sync") return;
 
-  const nextValue = changes[STOCK_CONFIG_STORAGE_KEY]?.newValue as Partial<StockConfig> | undefined;
+  const nextValue = changes[STOCK_CONFIG_STORAGE_KEY]?.newValue as
+    | Partial<StockConfig>
+    | undefined;
   if (!nextValue) return;
 
   config.value = normalizeStockConfig(nextValue);
@@ -251,9 +264,11 @@ onUnmounted(() => {
       <section class="settings-card" :style="{ width: cardWidth }">
         <div class="hero">
           <div>
-            <p class="eyebrow">TickEye Config</p>
+            <p class="eyebrow">StockWatch Config</p>
             <h1>股票盯盘助手</h1>
-            <p class="subtitle">输入股票代码或名称，页面悬浮窗会立刻切换到对应分时行情。</p>
+            <p class="subtitle">
+              输入股票代码或名称，页面悬浮窗会立刻切换到对应分时行情。
+            </p>
           </div>
           <div class="orb" aria-hidden="true"></div>
         </div>
@@ -264,7 +279,9 @@ onUnmounted(() => {
           <a-card class="glass-card" :bordered="false">
             <template #title>当前股票</template>
             <template #extra>
-              <a-tag color="green">{{ config.enabled ? "已显示" : "已隐藏" }}</a-tag>
+              <a-tag color="green">{{
+                config.enabled ? "已显示" : "已隐藏"
+              }}</a-tag>
             </template>
 
             <div class="current-stock">
@@ -287,7 +304,10 @@ onUnmounted(() => {
               />
             </a-auto-complete>
 
-            <p class="hint">数据源：东方财富搜索接口 + 分时接口；代码会保存为 secid，例如 1.600519。</p>
+            <p class="hint">
+              数据源：东方财富搜索接口 + 分时接口；代码会保存为 secid，例如
+              1.600519。
+            </p>
           </a-card>
 
           <a-card class="glass-card" :bordered="false" title="悬浮窗设置">
@@ -296,7 +316,11 @@ onUnmounted(() => {
                 <strong>显示悬浮窗</strong>
                 <span>临时关掉行情卡片，但保留配置。</span>
               </div>
-              <a-switch :checked="config.enabled" :loading="isSaving" @change="updateEnabled" />
+              <a-switch
+                :checked="config.enabled"
+                :loading="isSaving"
+                @change="updateEnabled"
+              />
             </div>
 
             <a-divider />
@@ -306,7 +330,11 @@ onUnmounted(() => {
                 <strong>默认展开图表</strong>
                 <span>刷新页面后直接展示分时图。</span>
               </div>
-              <a-switch :checked="config.defaultExpanded" :loading="isSaving" @change="updateDefaultExpanded" />
+              <a-switch
+                :checked="config.defaultExpanded"
+                :loading="isSaving"
+                @change="updateDefaultExpanded"
+              />
             </div>
 
             <a-divider />
@@ -330,18 +358,26 @@ onUnmounted(() => {
                   @change="updatePositionRight"
                 />
               </label>
-              <a-button class="reset-button" @click="resetPosition">重置位置</a-button>
+              <a-button class="reset-button" @click="resetPosition"
+                >重置位置</a-button
+              >
             </div>
           </a-card>
 
           <a-card class="glass-card" :bordered="false" title="刷新频率">
-            <a-radio-group v-model:value="refreshSeconds" option-type="button" button-style="solid">
+            <a-radio-group
+              v-model:value="refreshSeconds"
+              option-type="button"
+              button-style="solid"
+            >
               <a-radio-button value="3">3 秒</a-radio-button>
               <a-radio-button value="5">5 秒</a-radio-button>
               <a-radio-button value="10">10 秒</a-radio-button>
               <a-radio-button value="30">30 秒</a-radio-button>
             </a-radio-group>
-            <p class="hint">仅影响交易时段；非交易时段仍会自动降频，避免没必要的请求。</p>
+            <p class="hint">
+              仅影响交易时段；非交易时段仍会自动降频，避免没必要的请求。
+            </p>
           </a-card>
         </template>
       </section>
@@ -356,8 +392,16 @@ onUnmounted(() => {
   display: flex;
   justify-content: center;
   background:
-    radial-gradient(circle at 14% 12%, rgba(20, 184, 166, 0.3), transparent 28%),
-    radial-gradient(circle at 85% 0%, rgba(245, 158, 11, 0.24), transparent 28%),
+    radial-gradient(
+      circle at 14% 12%,
+      rgba(20, 184, 166, 0.3),
+      transparent 28%
+    ),
+    radial-gradient(
+      circle at 85% 0%,
+      rgba(245, 158, 11, 0.24),
+      transparent 28%
+    ),
     linear-gradient(135deg, #f7fee7 0%, #ecfeff 46%, #fff7ed 100%);
   color: #12312f;
 }
@@ -382,7 +426,11 @@ onUnmounted(() => {
   border-radius: 28px;
   background:
     linear-gradient(135deg, rgba(15, 118, 110, 0.9), rgba(20, 83, 45, 0.9)),
-    repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.12) 0 1px, transparent 1px 11px);
+    repeating-linear-gradient(
+      45deg,
+      rgba(255, 255, 255, 0.12) 0 1px,
+      transparent 1px 11px
+    );
   color: #f8fffb;
   box-shadow: 0 22px 60px rgba(15, 118, 110, 0.2);
 }
@@ -417,7 +465,9 @@ h1 {
   width: 126px;
   height: 126px;
   border-radius: 999px;
-  background: radial-gradient(circle at 32% 28%, #fef3c7, transparent 28%), linear-gradient(135deg, #f97316, #facc15);
+  background:
+    radial-gradient(circle at 32% 28%, #fef3c7, transparent 28%),
+    linear-gradient(135deg, #f97316, #facc15);
   box-shadow: inset 0 0 24px rgba(255, 255, 255, 0.36);
 }
 
