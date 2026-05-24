@@ -127,17 +127,18 @@ import {
   type StockConfig,
 } from "@/shared/stockConfig";
 import {
+  AreaSeries,
   ColorType,
   createChart,
   CrosshairMode,
   HistogramSeries,
   LineSeries,
   LineStyle,
+  type AreaData,
   type HistogramData,
   type IChartApi,
   type IPriceLine,
   type ISeriesApi,
-  type LineData,
   type Time,
   type UTCTimestamp,
   type WhitespaceData,
@@ -193,13 +194,16 @@ const LAST_TRADING_MINUTE_INDEX = 240;
 const TIME_SCALE_EDGE_PADDING_BARS = 8;
 const MIN_PRICE_RANGE_RATIO = 0.01;
 const PRICE_SCALE_MARGIN_TOP = 0.02;
-const PRICE_SCALE_MARGIN_BOTTOM = 0.25;
-const VOLUME_SCALE_MARGIN_TOP = 0.78;
+const PRICE_SCALE_MARGIN_BOTTOM = 0.05;
+const VOLUME_SCALE_MARGIN_TOP = 0.08;
 const VOLUME_SCALE_MARGIN_BOTTOM = 0;
 const OFF_HOURS_POLL_INTERVAL_MS = 1000 * 60 * 2;
 const HIDDEN_POLL_INTERVAL_MS = 1000 * 60 * 3;
+const STOCK_AREA_LINE_COLOR = "#1890ff";
+const STOCK_AREA_TOP_COLOR = "rgba(24, 144, 255, 0.22)";
+const STOCK_AREA_BOTTOM_COLOR = "rgba(255,255,255,0)";
 
-type SeriesPoint = LineData<UTCTimestamp> | WhitespaceData<UTCTimestamp>;
+type SeriesPoint = AreaData<UTCTimestamp> | WhitespaceData<UTCTimestamp>;
 type VolumeSeriesPoint =
   | HistogramData<UTCTimestamp>
   | WhitespaceData<UTCTimestamp>;
@@ -224,7 +228,7 @@ const stockData = ref<Stock>({
 });
 
 let chart: IChartApi | null = null;
-let priceLineSeries: ISeriesApi<"Line"> | null = null;
+let priceLineSeries: ISeriesApi<"Area"> | null = null;
 let avgLineSeries: ISeriesApi<"Line"> | null = null;
 let volumeSeries: ISeriesApi<"Histogram"> | null = null;
 let preClosePriceLine: IPriceLine | null = null;
@@ -232,7 +236,6 @@ let resizeObserver: ResizeObserver | null = null;
 let pollingTimer: ReturnType<typeof setTimeout> | null = null;
 let fetchController: AbortController | null = null;
 let isMounted = false;
-let lastAppliedTrendColor = "";
 
 const fullTradingMinuteIndexes = Array.from(
   { length: LAST_TRADING_MINUTE_INDEX + 1 },
@@ -245,17 +248,8 @@ const getTrendClassByPercent = (percent: number): "up" | "down" | "flat" => {
   return "flat";
 };
 
-const getTrendColorByPercent = (percent: number): string => {
-  if (percent > 0) return "#f23645";
-  if (percent < 0) return "#089981";
-  return "#758696";
-};
-
 const trendClass = computed(() =>
   getTrendClassByPercent(stockData.value.percent),
-);
-const trendColor = computed(() =>
-  getTrendColorByPercent(stockData.value.percent),
 );
 const widgetPositionStyle = computed(() => ({
   top: `${stockConfig.value.position.top}px`,
@@ -983,16 +977,16 @@ const initChart = () => {
     crosshair: {
       mode: CrosshairMode.Normal,
       vertLine: {
-        color: "#758696",
+        color: STOCK_AREA_LINE_COLOR,
         width: 1,
         style: LineStyle.Dashed,
-        labelBackgroundColor: "#666",
+        labelBackgroundColor: STOCK_AREA_LINE_COLOR,
       },
       horzLine: {
-        color: "#758696",
+        color: STOCK_AREA_LINE_COLOR,
         width: 1,
         style: LineStyle.Dashed,
-        labelBackgroundColor: "#666",
+        labelBackgroundColor: STOCK_AREA_LINE_COLOR,
       },
     },
     leftPriceScale: {
@@ -1044,15 +1038,22 @@ const initChart = () => {
   });
   resizeObserver.observe(chartContainerRef.value);
 
-  volumeSeries = chart.addSeries(HistogramSeries, {
-    priceScaleId: "volume",
-    priceFormat: {
-      type: "volume",
+  volumeSeries = chart.addSeries(
+    HistogramSeries,
+    {
+      priceScaleId: "volume",
+      priceFormat: {
+        type: "volume",
+      },
+      priceLineVisible: false,
+      lastValueVisible: false,
     },
-    priceLineVisible: false,
-    lastValueVisible: false,
-  });
-  chart.priceScale("volume").applyOptions({
+    1,
+  );
+  const [pricePane, volumePane] = chart.panes();
+  pricePane?.setStretchFactor(3);
+  volumePane?.setStretchFactor(1);
+  chart.priceScale("volume", 1).applyOptions({
     scaleMargins: {
       top: VOLUME_SCALE_MARGIN_TOP,
       bottom: VOLUME_SCALE_MARGIN_BOTTOM,
@@ -1069,9 +1070,11 @@ const initChart = () => {
     crosshairMarkerVisible: false,
   });
 
-  priceLineSeries = chart.addSeries(LineSeries, {
+  priceLineSeries = chart.addSeries(AreaSeries, {
     priceScaleId: "left",
-    color: trendColor.value,
+    lineColor: STOCK_AREA_LINE_COLOR,
+    topColor: STOCK_AREA_TOP_COLOR,
+    bottomColor: STOCK_AREA_BOTTOM_COLOR,
     lineWidth: 1,
     priceFormat: { type: "price", minMove: 0.01 },
     autoscaleInfoProvider: getSymmetricAutoscaleInfo,
@@ -1083,7 +1086,6 @@ const initChart = () => {
     crosshairMarkerBorderWidth: 2,
   });
   syncPreClosePriceLine();
-  lastAppliedTrendColor = trendColor.value;
 
   chart.subscribeCrosshairMove((param) => {
     if (!priceLineSeries || !param.point || param.time === undefined) {
@@ -1210,15 +1212,6 @@ const fetchIntradayData = async () => {
       stockData.value.price = currentPrice;
       stockData.value.percent = ((currentPrice - preClose) / preClose) * 100;
     }
-
-    if (!priceLineSeries) return;
-    const nextTrendColor = trendColor.value;
-    if (nextTrendColor !== lastAppliedTrendColor) {
-      priceLineSeries.applyOptions({
-        color: nextTrendColor,
-      });
-      lastAppliedTrendColor = nextTrendColor;
-    }
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") return;
     console.error("获取分时数据失败:", error);
@@ -1284,7 +1277,6 @@ onUnmounted(() => {
   avgLineSeries = null;
   volumeSeries = null;
   preClosePriceLine = null;
-  lastAppliedTrendColor = "";
 });
 </script>
 
