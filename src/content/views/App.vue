@@ -10,7 +10,12 @@
       :class="{ 'is-expanded': isExpanded }"
     >
       <div class="minimal-content" @click="isExpanded = !isExpanded">
-        <span class="stock-name">{{ stockData.name }}</span>
+        <span class="stock-name">
+          {{ stockData.name }}
+        </span>
+        <span class="info-time" v-if="isExpanded">
+          {{ displayPrice.toFixed(2) }}
+        </span>
         <span
           class="stock-percent"
           :class="[trendClass, { 'price-flash': shouldFlash }]"
@@ -21,16 +26,6 @@
       </div>
 
       <div class="expanded-wrapper">
-        <div class="detail-section">
-          <div class="chart-info-header">
-            <span class="info-time">{{ displayTime || "--:--" }}</span>
-            <span class="info-price" :class="displayTrendClass">
-              {{ displayPrice.toFixed(2) }}
-              <span class="info-percent">{{ displayPercentText }}</span>
-            </span>
-          </div>
-        </div>
-
         <div ref="chartContainerRef" class="chart-container">
           <div
             v-if="volumeDividerTop !== null"
@@ -76,7 +71,7 @@
           :class="{ visible: !!hoverInfo }"
         >
           <div class="tooltip-price tooltip-time">
-            <span>时间：</span>
+            <span>时间</span>
             {{ hoverInfo?.time }}
           </div>
           <div
@@ -85,7 +80,7 @@
               hoverInfo ? getTrendClassByPercent(hoverInfo.percent) : 'flat'
             "
           >
-            <span class="tooltip-label">价格：</span>
+            <span class="tooltip-label">价格</span>
             <span> {{ hoverInfo?.price.toFixed(2) }}</span>
           </div>
           <div
@@ -94,7 +89,7 @@
               hoverInfo ? getTrendClassByPercent(hoverInfo.percent) : 'flat'
             "
           >
-            <span class="tooltip-label">均价：</span>
+            <span class="tooltip-label">均价</span>
             <span>{{ hoverInfo?.avgPrice.toFixed(2) }}</span>
           </div>
           <div
@@ -103,11 +98,11 @@
               hoverInfo ? getTrendClassByPercent(hoverInfo.percent) : 'flat'
             "
           >
-            <span class="tooltip-label">涨跌幅：</span>
+            <span class="tooltip-label">涨跌幅</span>
             <span>{{ hoverPercentText }}</span>
           </div>
-          <div class="tooltip-volume">
-            <span class="tooltip-label">成交量：</span>
+          <div class="tooltip-price tooltip-volume">
+            <span class="tooltip-label">成交量</span>
             <span>{{ hoverInfo ? formatVolume(hoverInfo.volume) : "--" }}</span>
           </div>
         </div>
@@ -191,7 +186,7 @@ const AFTERNOON_SESSION_END_MINUTE = 15 * 60;
 const MORNING_SESSION_POINT_COUNT =
   MORNING_SESSION_END_MINUTE - MORNING_SESSION_START_MINUTE + 1;
 const LAST_TRADING_MINUTE_INDEX = 240;
-const TIME_SCALE_EDGE_PADDING_BARS = 8;
+const TIME_SCALE_EDGE_PADDING_BARS = 0;
 const MIN_PRICE_RANGE_RATIO = 0.01;
 const PRICE_SCALE_MARGIN_TOP = 0.02;
 const PRICE_SCALE_MARGIN_BOTTOM = 0.05;
@@ -756,9 +751,9 @@ const syncPreClosePriceLine = () => {
 
   const options = {
     price: preClosePrice.value,
-    color: "rgba(0, 0, 0, 0.26)",
-    lineWidth: 2,
-    lineStyle: LineStyle.Dotted,
+    color: "rgba(0, 0, 0, 0.1)",
+    lineWidth: 1,
+    lineStyle: LineStyle.Solid,
     lineVisible: true,
     axisLabelVisible: false,
     title: "",
@@ -969,7 +964,7 @@ const initChart = () => {
         style: LineStyle.Dotted,
       },
       horzLines: {
-        visible: true,
+        visible: false,
         color: "rgba(0,0,0,0.1)",
         style: LineStyle.Dotted,
       },
@@ -1013,11 +1008,16 @@ const initChart = () => {
     },
     timeScale: {
       barSpacing: 0,
-      borderColor: "rgba(0,0,0,0.1)",
+      borderVisible: false,
+      borderColor: "rgba(0,0,0,0)",
       timeVisible: true,
       fixLeftEdge: true,
+      fixRightEdge: true,
+      rightOffsetPixels: 12,
       secondsVisible: false,
       ticksVisible: false,
+      allowBoldLabels: false,
+
       tickMarkFormatter: (time: Time) => formatAxisTimeFromChartTime(time),
     },
     handleScroll: { vertTouchDrag: false },
@@ -1052,7 +1052,7 @@ const initChart = () => {
   );
   const [pricePane, volumePane] = chart.panes();
   pricePane?.setStretchFactor(3);
-  volumePane?.setStretchFactor(1);
+  volumePane?.setStretchFactor(1.5);
   chart.priceScale("volume", 1).applyOptions({
     scaleMargins: {
       top: VOLUME_SCALE_MARGIN_TOP,
@@ -1332,7 +1332,7 @@ onUnmounted(() => {
 
 .stock-card.is-expanded {
   height: max-content;
-  width: 450px;
+  width: 500px;
   background: rgba(255, 255, 255, 1);
 }
 
@@ -1374,40 +1374,6 @@ onUnmounted(() => {
   transform: translateY(0);
 }
 
-.detail-section {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin-bottom: 8px;
-}
-
-.chart-info-header {
-  height: 40px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 4px 0;
-  font-size: 12px;
-  color: #999;
-}
-
-.info-time {
-  font-weight: 500;
-}
-
-.info-price {
-  font-weight: 700;
-  font-size: 14px;
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-}
-
-.info-percent {
-  font-size: 12px;
-  font-weight: 500;
-}
-
 .floating-tooltip {
   position: absolute;
   left: 0;
@@ -1441,9 +1407,11 @@ onUnmounted(() => {
 }
 
 .tooltip-price {
+  width: 100px;
   display: flex;
-  gap: 6px;
   align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
   font-size: 12px;
   .tooltip-label {
     color: #666;
@@ -1466,7 +1434,7 @@ onUnmounted(() => {
 }
 
 .chart-container {
-  height: 250px;
+  height: 350px;
   width: 100%;
   background: rgba(0, 0, 0, 0.02);
   border-radius: 4px;
