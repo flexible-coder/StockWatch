@@ -10,12 +10,18 @@
       :class="{ 'is-expanded': isExpanded }"
     >
       <div class="minimal-content" @click="isExpanded = !isExpanded">
-        <span class="stock-name">
-          {{ stockData.name }}
-        </span>
-        <span class="info-time" v-if="isExpanded">
-          {{ displayPrice.toFixed(2) }}
-        </span>
+        <div class="stock-top-info">
+          <span class="stock-name">
+            {{ stockData.name }}
+          </span>
+          <span v-if="isExpanded" class="stock-top-metric stock-top-avg">
+            均价:{{ displayAvgPriceText }}
+          </span>
+          <span v-if="isExpanded" class="stock-top-metric stock-top-latest">
+            最新:{{ displayPriceText }}
+          </span>
+        </div>
+
         <span
           class="stock-percent"
           :class="[trendClass, { 'price-flash': shouldFlash }]"
@@ -105,6 +111,10 @@
             <span class="tooltip-label">成交量</span>
             <span>{{ hoverInfo ? formatVolume(hoverInfo.volume) : "--" }}</span>
           </div>
+          <div class="tooltip-price tooltip-amount">
+            <span class="tooltip-label">成交额</span>
+            <span>{{ hoverInfo ? formatAmount(hoverInfo.amount) : "--" }}</span>
+          </div>
         </div>
       </div>
     </div>
@@ -150,6 +160,7 @@ interface HoverInfo {
   price: number;
   avgPrice: number;
   volume: number;
+  amount: number;
   percent: number;
   x: number;
   y: number;
@@ -163,6 +174,7 @@ interface IntradayPoint {
   value: number;
   avgPrice: number;
   volume: number;
+  amount: number;
 }
 
 interface SymmetricPriceRange {
@@ -259,6 +271,19 @@ const latestTime = computed(() => {
 const displayTime = computed(() => hoverInfo.value?.time ?? latestTime.value);
 const displayPrice = computed(
   () => hoverInfo.value?.price ?? stockData.value.price,
+);
+const latestAvgPrice = computed(() => {
+  const lastPoint = rawData.value[rawData.value.length - 1];
+  return lastPoint?.avgPrice ?? 0;
+});
+const displayAvgPrice = computed(
+  () => hoverInfo.value?.avgPrice ?? latestAvgPrice.value,
+);
+const displayPriceText = computed(() =>
+  displayPrice.value > 0 ? displayPrice.value.toFixed(2) : "--",
+);
+const displayAvgPriceText = computed(() =>
+  displayAvgPrice.value > 0 ? displayAvgPrice.value.toFixed(2) : "--",
 );
 const displayPercent = computed(
   () => hoverInfo.value?.percent ?? stockData.value.percent,
@@ -395,6 +420,13 @@ const formatVolume = (volume: number): string => {
   if (!Number.isFinite(volume) || volume <= 0) return "0";
   if (volume >= 10000) return `${(volume / 10000).toFixed(2)}万`;
   return `${Math.round(volume)}`;
+};
+
+const formatAmount = (amount: number): string => {
+  if (!Number.isFinite(amount) || amount <= 0) return "0";
+  if (amount >= 100000000) return `${(amount / 100000000).toFixed(2)}亿`;
+  if (amount >= 10000) return `${(amount / 10000).toFixed(2)}万`;
+  return `${Math.round(amount)}`;
 };
 
 const syncAxisOverlayLabels = () => {
@@ -722,7 +754,8 @@ const isSameRawData = (next: IntradayPoint[]): boolean => {
     return false;
   if (
     lastPrev.avgPrice !== lastNext.avgPrice ||
-    lastPrev.volume !== lastNext.volume
+    lastPrev.volume !== lastNext.volume ||
+    lastPrev.amount !== lastNext.amount
   )
     return false;
   if (lastPrev.marketTime !== lastNext.marketTime) return false;
@@ -734,6 +767,7 @@ const isSameRawData = (next: IntradayPoint[]): boolean => {
     firstPrev.value === firstNext.value &&
     firstPrev.avgPrice === firstNext.avgPrice &&
     firstPrev.volume === firstNext.volume &&
+    firstPrev.amount === firstNext.amount &&
     firstPrev.marketTime === firstNext.marketTime
   );
 };
@@ -1118,6 +1152,7 @@ const initChart = () => {
       price: point.value,
       avgPrice: point.avgPrice,
       volume: point.volume,
+      amount: point.amount,
       percent:
         ((point.value - preClosePrice.value) / preClosePrice.value) * 100,
       x: param.point.x,
@@ -1171,6 +1206,7 @@ const fetchIntradayData = async () => {
       const price = getTrendPrice(fields) ?? 0;
       const avgPrice = getTrendAveragePrice(fields, price);
       const volume = parseFiniteNumber(fields[5]) ?? 0;
+      const amount = parseFiniteNumber(fields[6]) ?? 0;
 
       if (price <= 0 || avgPrice <= 0) continue;
 
@@ -1192,6 +1228,7 @@ const fetchIntradayData = async () => {
         value: price,
         avgPrice,
         volume,
+        amount,
       });
       currentPrice = price;
     }
@@ -1350,6 +1387,26 @@ onUnmounted(() => {
   color: #333;
 }
 
+.stock-top-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.stock-top-metric {
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.stock-top-avg {
+  color: #f5a623;
+}
+
+.stock-top-latest {
+  color: #1890ff;
+}
+
 .stock-percent {
   font-size: 12px;
   font-weight: 600;
@@ -1407,7 +1464,8 @@ onUnmounted(() => {
 }
 
 .tooltip-price {
-  width: 100px;
+  min-width: 100px;
+  max-width: 120px;
   display: flex;
   align-items: baseline;
   justify-content: space-between;
@@ -1422,7 +1480,8 @@ onUnmounted(() => {
   color: #f5a623;
 }
 
-.tooltip-volume {
+.tooltip-volume,
+.tooltip-amount {
   display: flex;
   gap: 6px;
   align-items: baseline;
