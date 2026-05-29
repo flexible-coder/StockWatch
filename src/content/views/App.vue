@@ -1046,8 +1046,6 @@ const initChart = () => {
       borderColor: "rgba(0,0,0,0)",
       timeVisible: true,
       fixLeftEdge: true,
-      fixRightEdge: true,
-      rightOffsetPixels: 12,
       secondsVisible: false,
       ticksVisible: false,
       allowBoldLabels: false,
@@ -1498,7 +1496,7 @@ onUnmounted(() => {
   background: rgba(0, 0, 0, 0.02);
   border-radius: 4px;
   position: relative;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .volume-divider {

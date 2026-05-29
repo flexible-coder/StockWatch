@@ -262,17 +262,6 @@ onUnmounted(() => {
   >
     <main class="settings-page" :class="{ 'is-sidepanel': isSidepanel }">
       <section class="settings-card" :style="{ width: cardWidth }">
-        <div class="hero">
-          <div>
-            <p class="eyebrow">StockWatch Config</p>
-            <h1>股票盯盘助手</h1>
-            <p class="subtitle">
-              输入股票代码或名称，页面悬浮窗会立刻切换到对应分时行情。
-            </p>
-          </div>
-          <div class="orb" aria-hidden="true"></div>
-        </div>
-
         <a-skeleton v-if="isLoading" active :paragraph="{ rows: 5 }" />
 
         <template v-else>
@@ -415,24 +404,6 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 14px;
-}
-
-.hero {
-  position: relative;
-  overflow: hidden;
-  min-height: 126px;
-  padding: 22px;
-  border: 1px solid rgba(15, 118, 110, 0.16);
-  border-radius: 28px;
-  background:
-    linear-gradient(135deg, rgba(15, 118, 110, 0.9), rgba(20, 83, 45, 0.9)),
-    repeating-linear-gradient(
-      45deg,
-      rgba(255, 255, 255, 0.12) 0 1px,
-      transparent 1px 11px
-    );
-  color: #f8fffb;
-  box-shadow: 0 22px 60px rgba(15, 118, 110, 0.2);
 }
 
 .eyebrow {
