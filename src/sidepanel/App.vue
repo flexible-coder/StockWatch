@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import StockSettingsPanel from "@/shared/StockSettingsPanel.vue";
+import StockPanel from "@/shared/StockPanel.vue";
 </script>
 
 <template>
-  <StockSettingsPanel surface="sidepanel" />
+  <StockPanel surface="sidepanel" />
 </template>

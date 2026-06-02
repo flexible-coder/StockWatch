@@ -24,6 +24,8 @@ type EastMoneySuggestItem = {
 };
 
 const SEARCH_API_URL = "https://searchapi.eastmoney.com/api/suggest/get";
+const SECID_PATTERN = /^\d+\.[A-Za-z0-9]+$/;
+const CODE_PATTERN = /^[A-Za-z0-9]{4,8}$/;
 
 const getSuggestRows = (payload: unknown): EastMoneySuggestItem[] => {
   if (!payload || typeof payload !== "object") return [];
@@ -31,7 +33,9 @@ const getSuggestRows = (payload: unknown): EastMoneySuggestItem[] => {
   const root = payload as Record<string, unknown>;
   const table = root.QuotationCodeTable ?? root.quotationCodeTable;
   if (table && typeof table === "object") {
-    const data = (table as Record<string, unknown>).Data ?? (table as Record<string, unknown>).data;
+    const data =
+      (table as Record<string, unknown>).Data ??
+      (table as Record<string, unknown>).data;
     return Array.isArray(data) ? (data as EastMoneySuggestItem[]) : [];
   }
 
@@ -39,16 +43,24 @@ const getSuggestRows = (payload: unknown): EastMoneySuggestItem[] => {
   return Array.isArray(data) ? (data as EastMoneySuggestItem[]) : [];
 };
 
-const normalizeSuggestItem = (item: EastMoneySuggestItem): StockSearchResult | null => {
+const normalizeSuggestItem = (
+  item: EastMoneySuggestItem,
+): StockSearchResult | null => {
   const code = String(item.Code ?? item.code ?? "").trim();
-  if (!/^\d{6}$/.test(code)) return null;
+  if (!CODE_PATTERN.test(code)) return null;
 
-  const secid = String(item.QuoteID ?? item.quoteId ?? inferSecidFromCode(code) ?? "").trim();
-  if (!/^[01]\.\d{6}$/.test(secid)) return null;
+  const secid = String(
+    item.QuoteID ?? item.quoteId ?? inferSecidFromCode(code) ?? "",
+  ).trim();
+  if (!SECID_PATTERN.test(secid)) return null;
 
   const name = String(item.Name ?? item.name ?? code).trim();
-  const market = String(item.JYS ?? item.jys ?? item.MarketType ?? item.marketType ?? "").trim();
-  const type = String(item.SecurityTypeName ?? item.securityTypeName ?? "股票").trim();
+  const market = String(
+    item.JYS ?? item.jys ?? item.MarketType ?? item.marketType ?? "",
+  ).trim();
+  const type = String(
+    item.SecurityTypeName ?? item.securityTypeName ?? "股票",
+  ).trim();
 
   return {
     secid,
@@ -59,7 +71,10 @@ const normalizeSuggestItem = (item: EastMoneySuggestItem): StockSearchResult | n
   };
 };
 
-export const searchStocks = async (keyword: string, signal?: AbortSignal): Promise<StockSearchResult[]> => {
+export const searchStocks = async (
+  keyword: string,
+  signal?: AbortSignal,
+): Promise<StockSearchResult[]> => {
   const trimmed = keyword.trim();
   if (!trimmed) return [];
 
@@ -74,8 +89,15 @@ export const searchStocks = async (keyword: string, signal?: AbortSignal): Promi
     headers: { "Cache-Control": "no-cache" },
     signal,
   });
+
+  if (!response.ok) {
+    throw new Error(`Search request failed: ${response.status}`);
+  }
+
   const payload: unknown = await response.json();
-  const results = getSuggestRows(payload).map(normalizeSuggestItem).filter((item): item is StockSearchResult => !!item);
+  const results = getSuggestRows(payload)
+    .map(normalizeSuggestItem)
+    .filter((item): item is StockSearchResult => !!item);
 
   if (results.length > 0) return results;
 

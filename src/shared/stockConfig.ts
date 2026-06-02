@@ -14,9 +14,9 @@ export interface StockConfig {
 export const STOCK_CONFIG_STORAGE_KEY = "tickeye.stockConfig";
 
 export const DEFAULT_STOCK_CONFIG: StockConfig = {
-  secid: "1.600396",
-  code: "600396",
-  name: "金山股份",
+  secid: "1.600519",
+  code: "600519",
+  name: "贵州茅台",
   enabled: true,
   defaultExpanded: false,
   position: {

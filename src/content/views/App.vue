@@ -131,6 +131,7 @@ import {
   STOCK_CONFIG_STORAGE_KEY,
   type StockConfig,
 } from "@/shared/stockConfig";
+import { fetchIntradayData as fetchSharedIntradayData } from "@/shared/intradayApi";
 import {
   AreaSeries,
   ColorType,
@@ -1179,73 +1180,30 @@ const fetchIntradayData = async () => {
   const stockSecid = stockConfig.value.secid;
 
   try {
-    const response = await fetch(
-      `https://push2.eastmoney.com/api/qt/stock/trends2/get?secid=${stockSecid}&fields1=f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f11,f12,f13&fields2=f51,f52,f53,f54,f55,f56,f57,f58&ut=fa5fd1943c7b386f172d6893dbfba10b&ndays=1&iscr=0&iscca=0`,
-      {
-        headers: { "Cache-Control": "no-cache" },
-        signal: fetchController.signal,
-      },
+    const result = await fetchSharedIntradayData(
+      stockSecid,
+      fetchController.signal,
     );
-
-    const result = await response.json();
-    if (!result.data?.trends) return;
-
-    const trends = result.data.trends as string[];
-    const preClose = Number(result.data.preClose) || 0;
+    const preClose = result.preClose;
     preClosePrice.value = preClose;
     syncPreClosePriceLine();
 
-    const parsedDataByMinute = new Map<number, IntradayPoint>();
-    let currentPrice = 0;
-
-    for (const item of trends) {
-      const fields = item.split(",");
-      const timeStr = fields[0];
-      const price = getTrendPrice(fields) ?? 0;
-      const avgPrice = getTrendAveragePrice(fields, price);
-      const volume = parseFiniteNumber(fields[5]) ?? 0;
-      const amount = parseFiniteNumber(fields[6]) ?? 0;
-
-      if (price <= 0 || avgPrice <= 0) continue;
-
-      const timestamp = parseEastMoneyDateTimeToTimestamp(timeStr);
-      if (typeof timestamp !== "number") continue;
-
-      const minuteIndex =
-        dateTimeTextToTradingMinuteIndex(timeStr) ??
-        timestampToTradingMinuteIndex(timestamp);
-      if (typeof minuteIndex !== "number") continue;
-
-      parsedDataByMinute.set(minuteIndex, {
-        time: minuteIndexToSyntheticTimestamp(minuteIndex),
-        realTime: timestamp,
-        marketTime:
-          formatMarketTimeFromDateTimeText(timeStr) ||
-          formatMarketTimeFromMinuteIndex(minuteIndex),
-        minuteIndex,
-        value: price,
-        avgPrice,
-        volume,
-        amount,
-      });
-      currentPrice = price;
-    }
-
-    const parsedData = Array.from(parsedDataByMinute.values()).sort(
-      (a, b) => a.minuteIndex - b.minuteIndex,
-    );
+    const parsedData: IntradayPoint[] = result.points.map((point) => ({
+      ...point,
+      time: point.time as UTCTimestamp,
+    }));
     if (!isSameRawData(parsedData)) {
       rawData.value = parsedData;
       syncPriceSeriesData(parsedData);
     }
 
-    if (result.data.name) {
-      stockData.value.name = result.data.name;
+    if (result.name) {
+      stockData.value.name = result.name;
     }
 
-    if (currentPrice > 0 && preClose > 0) {
-      stockData.value.price = currentPrice;
-      stockData.value.percent = ((currentPrice - preClose) / preClose) * 100;
+    if (result.currentPrice > 0 && preClose > 0) {
+      stockData.value.price = result.currentPrice;
+      stockData.value.percent = result.percent;
     }
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") return;

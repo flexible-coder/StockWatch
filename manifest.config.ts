@@ -14,16 +14,14 @@ export default defineManifest({
     },
     default_popup: 'src/popup/index.html',
   },
-  content_scripts: [{
-    js: ['src/content/main.ts'],
-    matches: ['https://*/*'],
-    exclude_matches: ['http://127.0.0.1/*']
-  }],
-  permissions: [
-    'sidePanel',
-    'contentSettings',
-    'storage',
+  content_scripts: [
+    {
+      js: ['src/content/main.ts'],
+      matches: ['https://*/*'],
+      exclude_matches: ['http://127.0.0.1/*'],
+    },
   ],
+  permissions: ['sidePanel', 'contentSettings', 'storage'],
   host_permissions: [
     'http://push2.eastmoney.com/*',
     'https://push2.eastmoney.com/*',
@@ -36,7 +34,7 @@ export default defineManifest({
     service_worker: 'src/background/index.ts',
     type: 'module',
   },
-   commands: {
+  commands: {
     _execute_action: {
       suggested_key: {
         default: 'Ctrl+Shift+Y',
@@ -44,13 +42,12 @@ export default defineManifest({
       },
       description: '打开插件弹窗或侧边栏',
     },
-    // 你可以添加自定义命令，例如：
     toggle_feature: {
       suggested_key: {
         default: 'Ctrl+Shift+Z',
         mac: 'Command+Shift+Z',
       },
-      description: '切换特定功能状态',
+      description: '切换网页悬浮窗显示状态',
     },
   },
 })

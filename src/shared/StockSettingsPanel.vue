@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from "vue";
+import { computed, h, onMounted, onUnmounted, ref } from "vue";
 import { message } from "ant-design-vue";
+import { ArrowLeftIcon } from "./panelIcons";
 import {
   DEFAULT_STOCK_CONFIG,
   getStockConfig,
@@ -21,11 +22,19 @@ type AutoCompleteOption = {
 const props = withDefaults(
   defineProps<{
     surface?: "popup" | "sidepanel";
+    embedded?: boolean;
+    showBack?: boolean;
   }>(),
   {
     surface: "popup",
+    embedded: false,
+    showBack: false,
   },
 );
+
+const emit = defineEmits<{
+  back: [];
+}>();
 
 const config = ref<StockConfig>(DEFAULT_STOCK_CONFIG);
 const searchText = ref("");
@@ -39,11 +48,8 @@ let searchController: AbortController | null = null;
 let searchSerial = 0;
 
 const isSidepanel = computed(() => props.surface === "sidepanel");
-const cardWidth = computed(() =>
-  isSidepanel.value ? "min(100%, 560px)" : "390px",
-);
 const currentStockText = computed(
-  () => `${config.value.name} ${config.value.code} · ${config.value.secid}`,
+  () => `${config.value.name} ${config.value.code} / ${config.value.secid}`,
 );
 const refreshSeconds = computed({
   get: () => String(Math.round(config.value.tradingPollIntervalMs / 1000)),
@@ -54,13 +60,16 @@ const refreshSeconds = computed({
   },
 });
 
+const isAStock = (stock: Pick<StockConfig, "secid">) =>
+  /^[01]\.\d{6}$/.test(stock.secid);
+
 const formatOptionLabel = (stock: StockSearchResult) => {
-  const market = stock.market ? ` · ${stock.market}` : "";
+  const market = stock.market ? ` ${stock.market}` : "";
   return `${stock.name} ${stock.code}${market}`;
 };
 
 const setSearchResults = (results: StockSearchResult[]) => {
-  const options = results.map((stock) => ({
+  const options = results.filter(isAStock).map((stock) => ({
     value: `${stock.name} ${stock.code}`,
     label: formatOptionLabel(stock),
     stock,
@@ -97,6 +106,11 @@ const updateConfig = async (patch: Partial<StockConfig>) => {
 const applyStock = async (
   stock: Pick<StockConfig, "secid" | "code" | "name">,
 ) => {
+  if (!isAStock(stock)) {
+    void message.warning("网页悬浮窗暂只支持 A 股分时");
+    return;
+  }
+
   await updateConfig({
     secid: stock.secid,
     code: stock.code,
@@ -107,8 +121,6 @@ const applyStock = async (
 };
 
 const handleSearch = async (keyword: string) => {
-  console.log("AAAAAAAAA");
-
   searchText.value = keyword;
 
   const trimmed = keyword.trim();
@@ -158,8 +170,7 @@ const handleSelect = (value: string) => {
   void applyStock(stock);
 };
 
-const applyCurrentInput = async (value: string, event: Event) => {
-  console.log("BBBBBBBBBBB", event);
+const applyCurrentInput = async (value: string) => {
   const keyword = (value ?? searchText.value).trim();
   if (!keyword) return;
 
@@ -175,13 +186,13 @@ const applyCurrentInput = async (value: string, event: Event) => {
     return;
   }
 
-  const results = await searchStocks(keyword);
+  const results = (await searchStocks(keyword)).filter(isAStock);
   if (results[0]) {
     await applyStock(results[0]);
     return;
   }
 
-  void message.warning("没有找到对应股票，请换个名称或代码");
+  void message.warning("没有找到对应 A 股，请换个名称或代码");
 };
 
 const resetPosition = () => {
@@ -251,213 +262,211 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <a-config-provider
-    :theme="{
-      token: {
-        colorPrimary: '#0f766e',
-        borderRadius: 14,
-        fontFamily: 'Sora, ui-sans-serif, system-ui',
-      },
-    }"
+  <main
+    class="settings-page"
+    :class="{ embedded, 'is-sidepanel': isSidepanel }"
   >
-    <main class="settings-page" :class="{ 'is-sidepanel': isSidepanel }">
-      <section class="settings-card" :style="{ width: cardWidth }">
-        <a-skeleton v-if="isLoading" active :paragraph="{ rows: 5 }" />
+    <header class="settings-header">
+      <a-button
+        v-if="showBack"
+        type="text"
+        :icon="h(ArrowLeftIcon)"
+        @click="emit('back')"
+      />
+      <div>
+        <h1>设置</h1>
+        <p>悬浮窗股票、位置与刷新频率</p>
+      </div>
+    </header>
 
-        <template v-else>
-          <a-card class="glass-card" :bordered="false">
-            <template #title>当前股票</template>
-            <template #extra>
-              <a-tag color="green">{{
-                config.enabled ? "已显示" : "已隐藏"
-              }}</a-tag>
-            </template>
+    <section class="settings-content">
+      <a-skeleton v-if="isLoading" active :paragraph="{ rows: 5 }" />
 
-            <div class="current-stock">
-              <span>{{ currentStockText }}</span>
+      <template v-else>
+        <section class="settings-section">
+          <div class="section-title">
+            <strong>当前股票</strong>
+            <a-tag :color="config.enabled ? 'blue' : 'default'">
+              {{ config.enabled ? "已显示" : "已隐藏" }}
+            </a-tag>
+          </div>
+
+          <div class="current-stock">
+            <span>{{ currentStockText }}</span>
+          </div>
+
+          <a-auto-complete
+            v-model:value="searchText"
+            class="stock-search"
+            :options="searchOptions"
+            :filter-option="false"
+            @search="handleSearch"
+            @select="handleSelect"
+          >
+            <a-input-search
+              placeholder="搜索 A 股名称 / 代码，如 贵州茅台 或 600519"
+              enter-button="应用"
+              :loading="isSearching || isSaving"
+              @search="applyCurrentInput"
+            />
+          </a-auto-complete>
+        </section>
+
+        <section class="settings-section">
+          <div class="setting-row">
+            <div>
+              <strong>显示悬浮窗</strong>
+              <span>临时关闭网页内行情卡片</span>
             </div>
+            <a-switch
+              :checked="config.enabled"
+              :loading="isSaving"
+              @change="updateEnabled"
+            />
+          </div>
 
-            <a-auto-complete
-              v-model:value="searchText"
-              class="stock-search"
-              :options="searchOptions"
-              :filter-option="false"
-              @search="handleSearch"
-            >
-              <a-input-search
-                size="large"
-                placeholder="搜索股票名称 / 代码，如 贵州茅台 或 600519"
-                enter-button="应用"
-                :loading="isSearching || isSaving"
-                @search="applyCurrentInput"
+          <a-divider />
+
+          <div class="setting-row">
+            <div>
+              <strong>默认展开图表</strong>
+              <span>刷新页面后直接展示分时图</span>
+            </div>
+            <a-switch
+              :checked="config.defaultExpanded"
+              :loading="isSaving"
+              @change="updateDefaultExpanded"
+            />
+          </div>
+
+          <a-divider />
+
+          <div class="position-grid">
+            <label>
+              距顶部
+              <a-input-number
+                :value="config.position.top"
+                :min="8"
+                addon-after="px"
+                @change="updatePositionTop"
               />
-            </a-auto-complete>
-
-            <p class="hint">
-              数据源：东方财富搜索接口 + 分时接口；代码会保存为 secid，例如
-              1.600519。
-            </p>
-          </a-card>
-
-          <a-card class="glass-card" :bordered="false" title="悬浮窗设置">
-            <div class="setting-row">
-              <div>
-                <strong>显示悬浮窗</strong>
-                <span>临时关掉行情卡片，但保留配置。</span>
-              </div>
-              <a-switch
-                :checked="config.enabled"
-                :loading="isSaving"
-                @change="updateEnabled"
+            </label>
+            <label>
+              距右侧
+              <a-input-number
+                :value="config.position.right"
+                :min="8"
+                addon-after="px"
+                @change="updatePositionRight"
               />
-            </div>
+            </label>
+            <a-button class="reset-button" @click="resetPosition">
+              重置位置
+            </a-button>
+          </div>
+        </section>
 
-            <a-divider />
-
-            <div class="setting-row">
-              <div>
-                <strong>默认展开图表</strong>
-                <span>刷新页面后直接展示分时图。</span>
-              </div>
-              <a-switch
-                :checked="config.defaultExpanded"
-                :loading="isSaving"
-                @change="updateDefaultExpanded"
-              />
-            </div>
-
-            <a-divider />
-
-            <div class="position-grid">
-              <label>
-                距顶部
-                <a-input-number
-                  :value="config.position.top"
-                  :min="8"
-                  addon-after="px"
-                  @change="updatePositionTop"
-                />
-              </label>
-              <label>
-                距右侧
-                <a-input-number
-                  :value="config.position.right"
-                  :min="8"
-                  addon-after="px"
-                  @change="updatePositionRight"
-                />
-              </label>
-              <a-button class="reset-button" @click="resetPosition"
-                >重置位置</a-button
-              >
-            </div>
-          </a-card>
-
-          <a-card class="glass-card" :bordered="false" title="刷新频率">
-            <a-radio-group
-              v-model:value="refreshSeconds"
-              option-type="button"
-              button-style="solid"
-            >
-              <a-radio-button value="3">3 秒</a-radio-button>
-              <a-radio-button value="5">5 秒</a-radio-button>
-              <a-radio-button value="10">10 秒</a-radio-button>
-              <a-radio-button value="30">30 秒</a-radio-button>
-            </a-radio-group>
-            <p class="hint">
-              仅影响交易时段；非交易时段仍会自动降频，避免没必要的请求。
-            </p>
-          </a-card>
-        </template>
-      </section>
-    </main>
-  </a-config-provider>
+        <section class="settings-section">
+          <div class="section-title">
+            <strong>刷新频率</strong>
+          </div>
+          <a-radio-group
+            v-model:value="refreshSeconds"
+            option-type="button"
+            button-style="solid"
+          >
+            <a-radio-button value="3">3 秒</a-radio-button>
+            <a-radio-button value="5">5 秒</a-radio-button>
+            <a-radio-button value="10">10 秒</a-radio-button>
+            <a-radio-button value="30">30 秒</a-radio-button>
+          </a-radio-group>
+          <p class="hint">仅影响交易时段；非交易时段会自动降频。</p>
+        </section>
+      </template>
+    </section>
+  </main>
 </template>
 
 <style scoped>
 .settings-page {
   min-height: 100vh;
-  padding: 18px;
-  display: flex;
-  justify-content: center;
-  background:
-    radial-gradient(
-      circle at 14% 12%,
-      rgba(20, 184, 166, 0.3),
-      transparent 28%
-    ),
-    radial-gradient(
-      circle at 85% 0%,
-      rgba(245, 158, 11, 0.24),
-      transparent 28%
-    ),
-    linear-gradient(135deg, #f7fee7 0%, #ecfeff 46%, #fff7ed 100%);
-  color: #12312f;
-}
-
-.settings-page.is-sidepanel {
-  align-items: flex-start;
-  padding: 28px 18px;
-}
-
-.settings-card {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  background: #f8fafc;
+  color: #111827;
 }
 
-.eyebrow {
-  margin: 0 0 8px;
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.7);
+.settings-page.embedded {
+  min-height: 0;
+  height: 100%;
 }
 
-h1 {
+.settings-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 18px 16px 12px;
+  border-bottom: 1px solid #e5e7eb;
+  background: #fff;
+}
+
+.settings-header :deep(.ant-btn) {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+}
+
+.settings-header :deep(svg) {
+  width: 16px;
+  height: 16px;
+}
+
+.settings-header h1 {
   margin: 0;
-  font-size: 30px;
-  line-height: 1.08;
-  letter-spacing: -0.05em;
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1.2;
 }
 
-.subtitle {
-  max-width: 270px;
-  margin: 12px 0 0;
-  color: rgba(255, 255, 255, 0.78);
-  font-size: 13px;
+.settings-header p {
+  margin: 4px 0 0;
+  color: #6b7280;
+  font-size: 12px;
 }
 
-.orb {
-  position: absolute;
-  right: -34px;
-  bottom: -36px;
-  width: 126px;
-  height: 126px;
-  border-radius: 999px;
-  background:
-    radial-gradient(circle at 32% 28%, #fef3c7, transparent 28%),
-    linear-gradient(135deg, #f97316, #facc15);
-  box-shadow: inset 0 0 24px rgba(255, 255, 255, 0.36);
+.settings-content {
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+  padding: 14px;
 }
 
-.glass-card {
-  border-radius: 24px;
-  background: rgba(255, 255, 255, 0.76);
-  box-shadow: 0 16px 48px rgba(17, 94, 89, 0.12);
-  backdrop-filter: blur(18px);
+.settings-section {
+  margin-bottom: 12px;
+  padding: 14px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
 }
 
 .current-stock {
-  display: inline-flex;
+  display: flex;
   width: 100%;
   margin-bottom: 12px;
-  padding: 12px 14px;
-  border-radius: 16px;
-  background: rgba(15, 118, 110, 0.08);
-  color: #0f766e;
-  font-weight: 800;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #eff6ff;
+  color: #1890ff;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .stock-search {
@@ -482,7 +491,7 @@ h1 {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  color: #12312f;
+  color: #111827;
   font-size: 14px;
 }
 
@@ -503,17 +512,9 @@ h1 {
   grid-column: 1 / -1;
 }
 
-@media (max-width: 430px) {
-  .settings-page {
-    padding: 12px;
-  }
-
-  .settings-card {
-    width: 100% !important;
-  }
-
-  h1 {
-    font-size: 26px;
+@media (max-width: 380px) {
+  .position-grid {
+    grid-template-columns: 1fr;
   }
 }
 </style>
