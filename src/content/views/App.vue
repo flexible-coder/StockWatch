@@ -1,33 +1,55 @@
 ﻿<template>
-  <div
-    v-if="stockConfig.enabled"
-    class="stock-widget-container"
-    :style="widgetPositionStyle"
-  >
+  <div v-if="stockConfig.enabled" class="stock-widget-container" :style="widgetPositionStyle">
     <div
       ref="stockCardRef"
       class="stock-card"
-      :class="{ 'is-expanded': isExpanded }"
+      :class="{
+        'is-expanded': isExpanded,
+        'is-snapped': snapSide !== null && !isExpanded,
+        [`snap-${snapSide}`]: snapSide !== null,
+      }"
+      @pointerdown="handleWidgetPointerDown"
     >
-      <div class="minimal-content" @click="isExpanded = !isExpanded">
+      <div v-if="!isExpanded" class="watchlist-mini-panel">
+        <div class="watchlist-mini-titlebar">
+          <span class="watchlist-mini-title"></span>
+          <div class="watchlist-mini-controls" aria-label="窗口控制">
+            <CaretUpOutlined
+              class="watchlist-mini-control"
+              @click.stop="toggleMiniPanelMinimized"
+              v-if="!isMiniPanelMinimized"
+            />
+            <CaretDownOutlined class="watchlist-mini-control" @click.stop="toggleMiniPanelMinimized" v-else />
+            <CloseOutlined class="watchlist-mini-control close" style="font-size: 10px" @click.stop="closeWidget" />
+          </div>
+        </div>
+        <button
+          v-for="row in displayedWidgetRows"
+          :key="row.stock.secid"
+          class="watchlist-mini-row"
+          :class="{
+            active: row.stock.secid === stockConfig.secid,
+            first: row.index === 0,
+          }"
+          type="button"
+          @click.stop="selectWidgetStock(row.stock)"
+        >
+          <span class="mini-stock-name">{{ row.stock.name }}</span>
+          <span class="mini-stock-percent" :class="getTrendClassByPercent(row.percent)">
+            {{ formatSignedPercent(row.percent) }}
+          </span>
+        </button>
+      </div>
+
+      <div v-else class="minimal-content" @click="isExpanded = false">
         <div class="stock-top-info">
-          <span class="stock-name">
-            {{ stockData.name }}
-          </span>
-          <span v-if="isExpanded" class="stock-top-metric stock-top-avg">
-            均价:{{ displayAvgPriceText }}
-          </span>
-          <span v-if="isExpanded" class="stock-top-metric stock-top-latest">
-            最新:{{ displayPriceText }}
-          </span>
+          <span class="stock-name">{{ stockData.name }}</span>
+          <span class="stock-top-metric stock-top-avg"> 均价:{{ displayAvgPriceText }} </span>
+          <span class="stock-top-metric stock-top-latest"> 最新:{{ displayPriceText }} </span>
         </div>
 
-        <span
-          class="stock-percent"
-          :class="[trendClass, { 'price-flash': shouldFlash }]"
-        >
-          {{ stockData.percent > 0 ? "+" : ""
-          }}{{ stockData.percent.toFixed(2) }}%
+        <span class="stock-percent" :class="[trendClass, { 'price-flash': shouldFlash }]">
+          {{ formatSignedPercent(stockData.percent) }}
         </span>
       </div>
 
@@ -39,11 +61,7 @@
             aria-hidden="true"
             :style="{ top: `${volumeDividerTop}px` }"
           ></div>
-          <div
-            v-if="priceAxisLabels.length"
-            class="price-axis-overlay"
-            aria-hidden="true"
-          >
+          <div v-if="priceAxisLabels.length" class="price-axis-overlay" aria-hidden="true">
             <span
               v-for="label in priceAxisLabels"
               :key="label.priceText"
@@ -54,11 +72,7 @@
               {{ label.priceText }}
             </span>
           </div>
-          <div
-            v-if="priceAxisLabels.length"
-            class="percent-axis-overlay"
-            aria-hidden="true"
-          >
+          <div v-if="priceAxisLabels.length" class="percent-axis-overlay" aria-hidden="true">
             <span
               v-for="label in priceAxisLabels"
               :key="label.percentText"
@@ -71,39 +85,20 @@
           </div>
         </div>
 
-        <div
-          ref="tooltipRef"
-          class="floating-tooltip"
-          :class="{ visible: !!hoverInfo }"
-        >
+        <div ref="tooltipRef" class="floating-tooltip" :class="{ visible: !!hoverInfo }">
           <div class="tooltip-price tooltip-time">
             <span>时间</span>
             {{ hoverInfo?.time }}
           </div>
-          <div
-            class="tooltip-price"
-            :class="
-              hoverInfo ? getTrendClassByPercent(hoverInfo.percent) : 'flat'
-            "
-          >
+          <div class="tooltip-price" :class="hoverInfo ? getTrendClassByPercent(hoverInfo.percent) : 'flat'">
             <span class="tooltip-label">价格</span>
             <span> {{ hoverInfo?.price.toFixed(2) }}</span>
           </div>
-          <div
-            class="tooltip-price"
-            :class="
-              hoverInfo ? getTrendClassByPercent(hoverInfo.percent) : 'flat'
-            "
-          >
+          <div class="tooltip-price" :class="hoverInfo ? getTrendClassByPercent(hoverInfo.percent) : 'flat'">
             <span class="tooltip-label">均价</span>
             <span>{{ hoverInfo?.avgPrice.toFixed(2) }}</span>
           </div>
-          <div
-            class="tooltip-price"
-            :class="
-              hoverInfo ? getTrendClassByPercent(hoverInfo.percent) : 'flat'
-            "
-          >
+          <div class="tooltip-price" :class="hoverInfo ? getTrendClassByPercent(hoverInfo.percent) : 'flat'">
             <span class="tooltip-label">涨跌幅</span>
             <span>{{ hoverPercentText }}</span>
           </div>
@@ -132,6 +127,13 @@ import {
   type StockConfig,
 } from "@/shared/stockConfig";
 import { fetchIntradayData as fetchSharedIntradayData } from "@/shared/intradayApi";
+import { fetchMarketQuotes, type MarketQuote } from "@/shared/quoteApi";
+import {
+  getWatchlist,
+  normalizeWatchlist,
+  WATCHLIST_STORAGE_KEY,
+  type WatchlistStock,
+} from "@/shared/watchlistStorage";
 import {
   AreaSeries,
   ColorType,
@@ -149,7 +151,7 @@ import {
   type UTCTimestamp,
   type WhitespaceData,
 } from "lightweight-charts";
-
+import { CaretDownOutlined, CaretUpOutlined, CloseOutlined } from "@ant-design/icons-vue";
 interface Stock {
   name: string;
   price: number;
@@ -196,8 +198,7 @@ const MORNING_SESSION_START_MINUTE = 9 * 60 + 30;
 const MORNING_SESSION_END_MINUTE = 11 * 60 + 30;
 const AFTERNOON_SESSION_START_MINUTE = 13 * 60;
 const AFTERNOON_SESSION_END_MINUTE = 15 * 60;
-const MORNING_SESSION_POINT_COUNT =
-  MORNING_SESSION_END_MINUTE - MORNING_SESSION_START_MINUTE + 1;
+const MORNING_SESSION_POINT_COUNT = MORNING_SESSION_END_MINUTE - MORNING_SESSION_START_MINUTE + 1;
 const LAST_TRADING_MINUTE_INDEX = 240;
 const TIME_SCALE_EDGE_PADDING_BARS = 0;
 const MIN_PRICE_RANGE_RATIO = 0.01;
@@ -207,17 +208,19 @@ const VOLUME_SCALE_MARGIN_TOP = 0.08;
 const VOLUME_SCALE_MARGIN_BOTTOM = 0;
 const OFF_HOURS_POLL_INTERVAL_MS = 1000 * 60 * 2;
 const HIDDEN_POLL_INTERVAL_MS = 1000 * 60 * 3;
+const SNAP_EDGE_THRESHOLD_PX = 150;
 const STOCK_AREA_LINE_COLOR = "#1890ff";
 const STOCK_AREA_TOP_COLOR = "rgba(24, 144, 255, 0.22)";
 const STOCK_AREA_BOTTOM_COLOR = "rgba(255,255,255,0)";
 
 type SeriesPoint = AreaData<UTCTimestamp> | WhitespaceData<UTCTimestamp>;
-type VolumeSeriesPoint =
-  | HistogramData<UTCTimestamp>
-  | WhitespaceData<UTCTimestamp>;
+type VolumeSeriesPoint = HistogramData<UTCTimestamp> | WhitespaceData<UTCTimestamp>;
 
 const stockConfig = ref<StockConfig>(DEFAULT_STOCK_CONFIG);
+const watchlist = ref<WatchlistStock[]>([]);
+const quoteBySecid = ref<Record<string, MarketQuote>>({});
 const isExpanded = ref(DEFAULT_STOCK_CONFIG.defaultExpanded);
+const isMiniPanelMinimized = ref(false);
 const shouldFlash = ref(false);
 const stockCardRef = ref<HTMLDivElement | null>(null);
 const chartContainerRef = ref<HTMLDivElement | null>(null);
@@ -228,6 +231,7 @@ const preClosePrice = ref(0);
 const isFetching = ref(false);
 const priceAxisLabels = ref<PriceAxisLabel[]>([]);
 const volumeDividerTop = ref<number | null>(null);
+const snapSide = ref<"left" | "right" | null>(null);
 
 const stockData = ref<Stock>({
   name: "加载中...",
@@ -243,12 +247,17 @@ let preClosePriceLine: IPriceLine | null = null;
 let resizeObserver: ResizeObserver | null = null;
 let pollingTimer: ReturnType<typeof setTimeout> | null = null;
 let fetchController: AbortController | null = null;
+let quoteFetchController: AbortController | null = null;
 let isMounted = false;
+let isPointerDragging = false;
+let suppressNextRowClick = false;
+let dragMoved = false;
+let dragStartX = 0;
+let dragStartY = 0;
+let dragStartTop = 0;
+let dragStartRight = 0;
 
-const fullTradingMinuteIndexes = Array.from(
-  { length: LAST_TRADING_MINUTE_INDEX + 1 },
-  (_, minuteIndex) => minuteIndex,
-);
+const fullTradingMinuteIndexes = Array.from({ length: LAST_TRADING_MINUTE_INDEX + 1 }, (_, minuteIndex) => minuteIndex);
 
 const getTrendClassByPercent = (percent: number): "up" | "down" | "flat" => {
   if (percent > 0) return "up";
@@ -256,8 +265,31 @@ const getTrendClassByPercent = (percent: number): "up" | "down" | "flat" => {
   return "flat";
 };
 
-const trendClass = computed(() =>
-  getTrendClassByPercent(stockData.value.percent),
+const trendClass = computed(() => getTrendClassByPercent(stockData.value.percent));
+const fallbackWatchlistStock = computed<WatchlistStock>(() => ({
+  secid: stockConfig.value.secid,
+  code: stockConfig.value.code,
+  name: stockConfig.value.name,
+  addedAt: 0,
+}));
+const visibleWatchlist = computed(() => {
+  const source = watchlist.value.length > 0 ? watchlist.value : [fallbackWatchlistStock.value];
+  return source.slice(0, 5);
+});
+const widgetRows = computed(() =>
+  visibleWatchlist.value.map((stock, index) => {
+    const quote = quoteBySecid.value[stock.secid];
+    const percent = quote?.percent ?? (stock.secid === stockConfig.value.secid ? stockData.value.percent : 0);
+    return {
+      stock,
+      quote,
+      percent,
+      index,
+    };
+  }),
+);
+const displayedWidgetRows = computed(() =>
+  isMiniPanelMinimized.value ? widgetRows.value.slice(0, 1) : widgetRows.value,
 );
 const widgetPositionStyle = computed(() => ({
   top: `${stockConfig.value.position.top}px`,
@@ -270,33 +302,18 @@ const latestTime = computed(() => {
 });
 
 const displayTime = computed(() => hoverInfo.value?.time ?? latestTime.value);
-const displayPrice = computed(
-  () => hoverInfo.value?.price ?? stockData.value.price,
-);
+const displayPrice = computed(() => hoverInfo.value?.price ?? stockData.value.price);
 const latestAvgPrice = computed(() => {
   const lastPoint = rawData.value[rawData.value.length - 1];
   return lastPoint?.avgPrice ?? 0;
 });
-const displayAvgPrice = computed(
-  () => hoverInfo.value?.avgPrice ?? latestAvgPrice.value,
-);
-const displayPriceText = computed(() =>
-  displayPrice.value > 0 ? displayPrice.value.toFixed(2) : "--",
-);
-const displayAvgPriceText = computed(() =>
-  displayAvgPrice.value > 0 ? displayAvgPrice.value.toFixed(2) : "--",
-);
-const displayPercent = computed(
-  () => hoverInfo.value?.percent ?? stockData.value.percent,
-);
-const displayTrendClass = computed(() =>
-  getTrendClassByPercent(displayPercent.value),
-);
-const formatSignedPercent = (percent: number): string =>
-  `${percent > 0 ? "+" : ""}${percent.toFixed(2)}%`;
-const displayPercentText = computed(() =>
-  formatSignedPercent(displayPercent.value),
-);
+const displayAvgPrice = computed(() => hoverInfo.value?.avgPrice ?? latestAvgPrice.value);
+const displayPriceText = computed(() => (displayPrice.value > 0 ? displayPrice.value.toFixed(2) : "--"));
+const displayAvgPriceText = computed(() => (displayAvgPrice.value > 0 ? displayAvgPrice.value.toFixed(2) : "--"));
+const displayPercent = computed(() => hoverInfo.value?.percent ?? stockData.value.percent);
+const displayTrendClass = computed(() => getTrendClassByPercent(displayPercent.value));
+const formatSignedPercent = (percent: number): string => `${percent > 0 ? "+" : ""}${percent.toFixed(2)}%`;
+const displayPercentText = computed(() => formatSignedPercent(displayPercent.value));
 const hoverPercentText = computed(() => {
   if (!hoverInfo.value) return "";
   return formatSignedPercent(hoverInfo.value.percent);
@@ -306,9 +323,7 @@ const buildFullTradingSeriesData = (
   points: IntradayPoint[],
   valueGetter: (point: IntradayPoint) => number,
 ): SeriesPoint[] => {
-  const pointByMinuteIndex = new Map(
-    points.map((point) => [point.minuteIndex, point]),
-  );
+  const pointByMinuteIndex = new Map(points.map((point) => [point.minuteIndex, point]));
 
   return fullTradingMinuteIndexes.map((minuteIndex) => {
     const time = minuteIndexToSyntheticTimestamp(minuteIndex);
@@ -317,12 +332,8 @@ const buildFullTradingSeriesData = (
   });
 };
 
-const buildVolumeSeriesData = (
-  points: IntradayPoint[],
-): VolumeSeriesPoint[] => {
-  const pointByMinuteIndex = new Map(
-    points.map((point) => [point.minuteIndex, point]),
-  );
+const buildVolumeSeriesData = (points: IntradayPoint[]): VolumeSeriesPoint[] => {
+  const pointByMinuteIndex = new Map(points.map((point) => [point.minuteIndex, point]));
 
   return fullTradingMinuteIndexes.map((minuteIndex) => {
     const time = minuteIndexToSyntheticTimestamp(minuteIndex);
@@ -331,8 +342,7 @@ const buildVolumeSeriesData = (
 
     const previousPoint = pointByMinuteIndex.get(minuteIndex - 1);
     const comparePrice = previousPoint?.value ?? preClosePrice.value;
-    const color =
-      comparePrice > 0 && point.value < comparePrice ? "#089981" : "#f23645";
+    const color = comparePrice > 0 && point.value < comparePrice ? "#089981" : "#f23645";
 
     return {
       time,
@@ -342,28 +352,17 @@ const buildVolumeSeriesData = (
   });
 };
 
-const seriesData = computed<SeriesPoint[]>(() =>
-  buildFullTradingSeriesData(rawData.value, (point) => point.value),
-);
+const seriesData = computed<SeriesPoint[]>(() => buildFullTradingSeriesData(rawData.value, (point) => point.value));
 const avgSeriesData = computed<SeriesPoint[]>(() =>
   buildFullTradingSeriesData(rawData.value, (point) => point.avgPrice),
 );
-const volumeSeriesData = computed<VolumeSeriesPoint[]>(() =>
-  buildVolumeSeriesData(rawData.value),
-);
-const pointIndex = computed(
-  () => new Map(rawData.value.map((point) => [point.time, point])),
-);
+const volumeSeriesData = computed<VolumeSeriesPoint[]>(() => buildVolumeSeriesData(rawData.value));
+const pointIndex = computed(() => new Map(rawData.value.map((point) => [point.time, point])));
 
-const calculateSymmetricPriceRange = (
-  points: IntradayPoint[],
-  preClose: number,
-): SymmetricPriceRange | null => {
+const calculateSymmetricPriceRange = (points: IntradayPoint[], preClose: number): SymmetricPriceRange | null => {
   if (preClose <= 0) return null;
 
-  const validPrices = points
-    .map((point) => point.value)
-    .filter((price) => Number.isFinite(price) && price > 0);
+  const validPrices = points.map((point) => point.value).filter((price) => Number.isFinite(price) && price > 0);
   const minDiff = Math.max(preClose * MIN_PRICE_RANGE_RATIO, 0.01);
 
   if (validPrices.length === 0) {
@@ -375,11 +374,7 @@ const calculateSymmetricPriceRange = (
 
   const maxPrice = Math.max(...validPrices);
   const minPrice = Math.min(...validPrices);
-  const maxDiff = Math.max(
-    Math.abs(maxPrice - preClose),
-    Math.abs(minPrice - preClose),
-    minDiff,
-  );
+  const maxDiff = Math.max(Math.abs(maxPrice - preClose), Math.abs(minPrice - preClose), minDiff);
 
   return {
     minValue: preClose - maxDiff,
@@ -387,9 +382,7 @@ const calculateSymmetricPriceRange = (
   };
 };
 
-const yAxisPriceRange = computed(() =>
-  calculateSymmetricPriceRange(rawData.value, preClosePrice.value),
-);
+const yAxisPriceRange = computed(() => calculateSymmetricPriceRange(rawData.value, preClosePrice.value));
 
 const getSymmetricAutoscaleInfo = () => {
   const range = yAxisPriceRange.value;
@@ -438,9 +431,7 @@ const syncAxisOverlayLabels = () => {
   }
 
   const range = yAxisPriceRange.value;
-  const dividerY = range
-    ? priceLineSeries.priceToCoordinate(range.minValue)
-    : null;
+  const dividerY = range ? priceLineSeries.priceToCoordinate(range.minValue) : null;
   volumeDividerTop.value = dividerY === null ? null : dividerY;
 
   priceAxisLabels.value = getAxisLabelPriceValues().flatMap((price) => {
@@ -460,12 +451,7 @@ const syncAxisOverlayLabels = () => {
 const getTimestampFromTime = (time: Time | undefined): number | null => {
   if (time === undefined) return null;
   if (typeof time === "number") return time;
-  if (
-    typeof time === "object" &&
-    "timestamp" in time &&
-    typeof time.timestamp === "number"
-  )
-    return time.timestamp;
+  if (typeof time === "object" && "timestamp" in time && typeof time.timestamp === "number") return time.timestamp;
   return null;
 };
 
@@ -481,31 +467,19 @@ const syntheticTimestampToMinuteIndex = (timestamp: number): number | null => {
 };
 
 const shanghaiMinutesFromTimestamp = (timestamp: number): number => {
-  const shanghaiDate = new Date(
-    (timestamp + MARKET_UTC_OFFSET_HOURS * 3600) * 1000,
-  );
+  const shanghaiDate = new Date((timestamp + MARKET_UTC_OFFSET_HOURS * 3600) * 1000);
   return shanghaiDate.getUTCHours() * 60 + shanghaiDate.getUTCMinutes();
 };
 
-const shanghaiMinutesToTradingMinuteIndex = (
-  minutes: number,
-): number | null => {
-  if (
-    minutes >= MORNING_SESSION_START_MINUTE &&
-    minutes <= MORNING_SESSION_END_MINUTE
-  ) {
+const shanghaiMinutesToTradingMinuteIndex = (minutes: number): number | null => {
+  if (minutes >= MORNING_SESSION_START_MINUTE && minutes <= MORNING_SESSION_END_MINUTE) {
     return minutes - MORNING_SESSION_START_MINUTE;
   }
 
-  if (
-    minutes >= AFTERNOON_SESSION_START_MINUTE &&
-    minutes <= AFTERNOON_SESSION_END_MINUTE
-  ) {
-    if (minutes === AFTERNOON_SESSION_END_MINUTE)
-      return LAST_TRADING_MINUTE_INDEX;
+  if (minutes >= AFTERNOON_SESSION_START_MINUTE && minutes <= AFTERNOON_SESSION_END_MINUTE) {
+    if (minutes === AFTERNOON_SESSION_END_MINUTE) return LAST_TRADING_MINUTE_INDEX;
 
-    const minuteIndex =
-      MORNING_SESSION_POINT_COUNT + (minutes - AFTERNOON_SESSION_START_MINUTE);
+    const minuteIndex = MORNING_SESSION_POINT_COUNT + (minutes - AFTERNOON_SESSION_START_MINUTE);
     return minuteIndex <= LAST_TRADING_MINUTE_INDEX ? minuteIndex : null;
   }
 
@@ -513,17 +487,11 @@ const shanghaiMinutesToTradingMinuteIndex = (
 };
 
 const timestampToTradingMinuteIndex = (timestamp: number): number | null => {
-  return shanghaiMinutesToTradingMinuteIndex(
-    shanghaiMinutesFromTimestamp(timestamp),
-  );
+  return shanghaiMinutesToTradingMinuteIndex(shanghaiMinutesFromTimestamp(timestamp));
 };
 
-const extractMarketMinutesFromDateTimeText = (
-  dateTimeText: string,
-): number | null => {
-  const fullDateTimeMatch = dateTimeText.match(
-    /^\d{4}-\d{2}-\d{2}\s+(\d{2}):(\d{2})$/,
-  );
+const extractMarketMinutesFromDateTimeText = (dateTimeText: string): number | null => {
+  const fullDateTimeMatch = dateTimeText.match(/^\d{4}-\d{2}-\d{2}\s+(\d{2}):(\d{2})$/);
   if (fullDateTimeMatch) {
     return Number(fullDateTimeMatch[1]) * 60 + Number(fullDateTimeMatch[2]);
   }
@@ -536,9 +504,7 @@ const extractMarketMinutesFromDateTimeText = (
   return null;
 };
 
-const dateTimeTextToTradingMinuteIndex = (
-  dateTimeText: string,
-): number | null => {
+const dateTimeTextToTradingMinuteIndex = (dateTimeText: string): number | null => {
   const minutes = extractMarketMinutesFromDateTimeText(dateTimeText);
   if (typeof minutes !== "number") return null;
   return shanghaiMinutesToTradingMinuteIndex(minutes);
@@ -556,10 +522,7 @@ const formatMarketTimeFromMinuteIndex = (minuteIndex: number): string => {
   if (minuteIndex < MORNING_SESSION_POINT_COUNT) {
     return formatClockFromMinutes(MORNING_SESSION_START_MINUTE + minuteIndex);
   }
-  return formatClockFromMinutes(
-    AFTERNOON_SESSION_START_MINUTE +
-      (minuteIndex - MORNING_SESSION_POINT_COUNT),
-  );
+  return formatClockFromMinutes(AFTERNOON_SESSION_START_MINUTE + (minuteIndex - MORNING_SESSION_POINT_COUNT));
 };
 
 const formatMarketTimeFromDateTimeText = (dateTimeText: string): string => {
@@ -592,22 +555,15 @@ const formatAxisTimeFromChartTime = (time: Time | undefined): string => {
   return "";
 };
 
-const parseEastMoneyDateTimeToTimestamp = (
-  dateTimeText: string,
-): number | null => {
-  const fullDateTimeMatch = dateTimeText.match(
-    /^(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})$/,
-  );
+const parseEastMoneyDateTimeToTimestamp = (dateTimeText: string): number | null => {
+  const fullDateTimeMatch = dateTimeText.match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})$/);
   if (fullDateTimeMatch) {
     const year = Number(fullDateTimeMatch[1]);
     const month = Number(fullDateTimeMatch[2]);
     const day = Number(fullDateTimeMatch[3]);
     const hours = Number(fullDateTimeMatch[4]);
     const minutes = Number(fullDateTimeMatch[5]);
-    return Math.floor(
-      Date.UTC(year, month - 1, day, hours - MARKET_UTC_OFFSET_HOURS, minutes) /
-        1000,
-    );
+    return Math.floor(Date.UTC(year, month - 1, day, hours - MARKET_UTC_OFFSET_HOURS, minutes) / 1000);
   }
 
   const timeOnlyMatch = dateTimeText.match(/^(\d{2}):(\d{2})$/);
@@ -618,10 +574,7 @@ const parseEastMoneyDateTimeToTimestamp = (
     const day = now.getUTCDate();
     const hours = Number(timeOnlyMatch[1]);
     const minutes = Number(timeOnlyMatch[2]);
-    return Math.floor(
-      Date.UTC(year, month, day, hours - MARKET_UTC_OFFSET_HOURS, minutes) /
-        1000,
-    );
+    return Math.floor(Date.UTC(year, month, day, hours - MARKET_UTC_OFFSET_HOURS, minutes) / 1000);
   }
 
   return null;
@@ -652,32 +605,19 @@ const getTrendAveragePrice = (fields: string[], price: number): number => {
   const volume = parseFiniteNumber(fields[5]);
   const amount = parseFiniteNumber(fields[6]);
   if (volume && amount && volume > 0) {
-    const isReasonableAverage = (value: number) =>
-      value > price * 0.2 && value < price * 5;
+    const isReasonableAverage = (value: number) => value > price * 0.2 && value < price * 5;
     const directAverage = amount / volume;
-    if (
-      Number.isFinite(directAverage) &&
-      directAverage > 0 &&
-      isReasonableAverage(directAverage)
-    )
-      return directAverage;
+    if (Number.isFinite(directAverage) && directAverage > 0 && isReasonableAverage(directAverage)) return directAverage;
 
     const handAverage = amount / (volume * 100);
-    if (
-      Number.isFinite(handAverage) &&
-      handAverage > 0 &&
-      isReasonableAverage(handAverage)
-    )
-      return handAverage;
+    if (Number.isFinite(handAverage) && handAverage > 0 && isReasonableAverage(handAverage)) return handAverage;
   }
 
   return price;
 };
 
 const getShanghaiNow = (): Date => {
-  return new Date(
-    new Date().toLocaleString("en-US", { timeZone: MARKET_TIME_ZONE }),
-  );
+  return new Date(new Date().toLocaleString("en-US", { timeZone: MARKET_TIME_ZONE }));
 };
 
 const isTradingSessionNow = (): boolean => {
@@ -693,9 +633,7 @@ const isTradingSessionNow = (): boolean => {
 
 const getNextPollInterval = (): number => {
   if (document.hidden) return HIDDEN_POLL_INTERVAL_MS;
-  return isTradingSessionNow()
-    ? stockConfig.value.tradingPollIntervalMs
-    : OFF_HOURS_POLL_INTERVAL_MS;
+  return isTradingSessionNow() ? stockConfig.value.tradingPollIntervalMs : OFF_HOURS_POLL_INTERVAL_MS;
 };
 
 const clearPollingTimer = () => {
@@ -717,6 +655,7 @@ const scheduleNextPoll = () => {
 const runPollingCycle = async () => {
   if (!isMounted || !stockConfig.value.enabled) return;
 
+  await fetchWidgetQuotes();
   await fetchIntradayData();
   scheduleNextPoll();
 };
@@ -741,6 +680,167 @@ const abortFetch = () => {
   }
 };
 
+const abortQuoteFetch = () => {
+  if (quoteFetchController) {
+    quoteFetchController.abort();
+    quoteFetchController = null;
+  }
+};
+
+const loadWatchlist = async () => {
+  watchlist.value = await getWatchlist();
+};
+
+const fetchWidgetQuotes = async () => {
+  const secids = visibleWatchlist.value.map((stock) => stock.secid);
+  if (secids.length === 0) return;
+
+  abortQuoteFetch();
+  quoteFetchController = new AbortController();
+
+  try {
+    const quotes = await fetchMarketQuotes(secids, quoteFetchController.signal);
+    quoteBySecid.value = Object.fromEntries(quotes.map((quote) => [quote.secid, quote]));
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") return;
+  } finally {
+    quoteFetchController = null;
+  }
+};
+
+const selectWidgetStock = (stock: WatchlistStock) => {
+  if (suppressNextRowClick) {
+    suppressNextRowClick = false;
+    return;
+  }
+
+  const nextConfig = {
+    ...stockConfig.value,
+    secid: stock.secid,
+    code: stock.code,
+    name: stock.name,
+  };
+
+  applyStockConfig(nextConfig);
+  void saveStockConfig(nextConfig);
+  isExpanded.value = true;
+};
+
+const toggleMiniPanelMinimized = () => {
+  isMiniPanelMinimized.value = !isMiniPanelMinimized.value;
+};
+
+const closeWidget = () => {
+  const nextConfig = {
+    ...stockConfig.value,
+    enabled: false,
+  };
+
+  applyStockConfig(nextConfig);
+  void saveStockConfig(nextConfig);
+};
+
+const clampWidgetPosition = (top: number, right: number) => {
+  const card = stockCardRef.value;
+  const width = card?.offsetWidth || 180;
+  const height = card?.offsetHeight || 250;
+  const maxTop = Math.max(8, window.innerHeight - height - 8);
+  const maxRight = Math.max(8, window.innerWidth - width - 8);
+
+  return {
+    top: Math.min(maxTop, Math.max(8, Math.round(top))),
+    right: Math.min(maxRight, Math.max(8, Math.round(right))),
+  };
+};
+
+const saveWidgetPosition = (top: number, right: number) => {
+  const position = clampWidgetPosition(top, right);
+  stockConfig.value = {
+    ...stockConfig.value,
+    position,
+  };
+
+  void saveStockConfig({
+    ...stockConfig.value,
+    position,
+  });
+};
+
+const snapWidgetToEdge = () => {
+  const card = stockCardRef.value;
+  if (!card) return;
+
+  const rect = card.getBoundingClientRect();
+  const distanceToLeft = rect.left;
+  const distanceToRight = window.innerWidth - rect.right;
+  const isNearLeft = distanceToLeft <= SNAP_EDGE_THRESHOLD_PX;
+  const isNearRight = distanceToRight <= SNAP_EDGE_THRESHOLD_PX;
+
+  if (!isNearLeft && !isNearRight) {
+    snapSide.value = null;
+    saveWidgetPosition(rect.top, window.innerWidth - rect.right);
+    return;
+  }
+
+  const nextSide = distanceToLeft <= distanceToRight ? "left" : "right";
+  const nextRight = nextSide === "right" ? 8 : Math.max(8, window.innerWidth - rect.width - 8);
+
+  snapSide.value = nextSide;
+  saveWidgetPosition(rect.top, nextRight);
+};
+
+const handleWidgetPointerMove = (event: PointerEvent) => {
+  if (!isPointerDragging) return;
+
+  const deltaX = event.clientX - dragStartX;
+  const deltaY = event.clientY - dragStartY;
+  if (Math.abs(deltaX) > 3 || Math.abs(deltaY) > 3) {
+    dragMoved = true;
+    suppressNextRowClick = true;
+  }
+
+  if (!dragMoved) return;
+
+  snapSide.value = null;
+  const nextTop = dragStartTop + deltaY;
+  const nextRight = dragStartRight - deltaX;
+  const position = clampWidgetPosition(nextTop, nextRight);
+  stockConfig.value = {
+    ...stockConfig.value,
+    position,
+  };
+};
+
+const handleWidgetPointerUp = () => {
+  if (!isPointerDragging) return;
+  isPointerDragging = false;
+  document.removeEventListener("pointermove", handleWidgetPointerMove);
+  document.removeEventListener("pointerup", handleWidgetPointerUp);
+  if (dragMoved) {
+    snapWidgetToEdge();
+  }
+};
+
+const handleWidgetPointerDown = (event: PointerEvent) => {
+  if (event.button !== 0) return;
+  if (isExpanded.value && (event.target as HTMLElement).closest(".chart-container")) {
+    return;
+  }
+
+  const rect = stockCardRef.value?.getBoundingClientRect();
+  if (!rect) return;
+
+  isPointerDragging = true;
+  suppressNextRowClick = false;
+  dragMoved = false;
+  dragStartX = event.clientX;
+  dragStartY = event.clientY;
+  dragStartTop = rect.top;
+  dragStartRight = window.innerWidth - rect.right;
+  document.addEventListener("pointermove", handleWidgetPointerMove);
+  document.addEventListener("pointerup", handleWidgetPointerUp);
+};
+
 const isSameRawData = (next: IntradayPoint[]): boolean => {
   const prev = rawData.value;
   if (prev.length !== next.length) return false;
@@ -748,11 +848,7 @@ const isSameRawData = (next: IntradayPoint[]): boolean => {
 
   const lastPrev = prev[prev.length - 1];
   const lastNext = next[next.length - 1];
-  if (
-    lastPrev.realTime !== lastNext.realTime ||
-    lastPrev.value !== lastNext.value
-  )
-    return false;
+  if (lastPrev.realTime !== lastNext.realTime || lastPrev.value !== lastNext.value) return false;
   if (
     lastPrev.avgPrice !== lastNext.avgPrice ||
     lastPrev.volume !== lastNext.volume ||
@@ -835,14 +931,8 @@ const applyVolumeSeriesData = (nextData: VolumeSeriesPoint[]) => {
 
 const syncPriceSeriesData = (next: IntradayPoint[]) => {
   if (!priceLineSeries) return;
-  const nextPriceData = buildFullTradingSeriesData(
-    next,
-    (point) => point.value,
-  );
-  const nextAvgData = buildFullTradingSeriesData(
-    next,
-    (point) => point.avgPrice,
-  );
+  const nextPriceData = buildFullTradingSeriesData(next, (point) => point.value);
+  const nextAvgData = buildFullTradingSeriesData(next, (point) => point.avgPrice);
   applySeriesData(nextPriceData);
   applyAvgSeriesData(nextAvgData);
   applyVolumeSeriesData(buildVolumeSeriesData(next));
@@ -861,10 +951,7 @@ const resetStockState = () => {
   volumeDividerTop.value = null;
   syncPreClosePriceLine();
   const emptyPriceData = buildFullTradingSeriesData([], (point) => point.value);
-  const emptyAvgData = buildFullTradingSeriesData(
-    [],
-    (point) => point.avgPrice,
-  );
+  const emptyAvgData = buildFullTradingSeriesData([], (point) => point.avgPrice);
   applySeriesData(emptyPriceData);
   applyAvgSeriesData(emptyAvgData);
   applyVolumeSeriesData(buildVolumeSeriesData([]));
@@ -874,9 +961,7 @@ const applyStockConfig = (nextConfig: Partial<StockConfig> | undefined) => {
   const normalizedConfig = normalizeStockConfig(nextConfig);
   const stockChanged = normalizedConfig.secid !== stockConfig.value.secid;
   const enabledChanged = normalizedConfig.enabled !== stockConfig.value.enabled;
-  const pollIntervalChanged =
-    normalizedConfig.tradingPollIntervalMs !==
-    stockConfig.value.tradingPollIntervalMs;
+  const pollIntervalChanged = normalizedConfig.tradingPollIntervalMs !== stockConfig.value.tradingPollIntervalMs;
 
   stockConfig.value = normalizedConfig;
 
@@ -899,18 +984,19 @@ const applyStockConfig = (nextConfig: Partial<StockConfig> | undefined) => {
   }
 };
 
-const handleStockConfigStorageChange = (
-  changes: Record<string, chrome.storage.StorageChange>,
-  areaName: string,
-) => {
+const handleStockConfigStorageChange = (changes: Record<string, chrome.storage.StorageChange>, areaName: string) => {
   if (areaName !== "sync") return;
 
-  const nextValue = changes[STOCK_CONFIG_STORAGE_KEY]?.newValue as
-    | Partial<StockConfig>
-    | undefined;
-  if (!nextValue) return;
+  const nextValue = changes[STOCK_CONFIG_STORAGE_KEY]?.newValue as Partial<StockConfig> | undefined;
+  if (nextValue) {
+    applyStockConfig(nextValue);
+  }
 
-  applyStockConfig(nextValue);
+  const nextWatchlist = changes[WATCHLIST_STORAGE_KEY]?.newValue;
+  if (nextWatchlist) {
+    watchlist.value = normalizeWatchlist(nextWatchlist);
+    void fetchWidgetQuotes();
+  }
 };
 
 const handleRuntimeMessage = (message: { type?: string }) => {
@@ -1126,9 +1212,7 @@ const initChart = () => {
       return;
     }
 
-    const priceData = param.seriesData.get(priceLineSeries) as
-      | { value?: number }
-      | undefined;
+    const priceData = param.seriesData.get(priceLineSeries) as { value?: number } | undefined;
     if (!priceData || typeof priceData.value !== "number") {
       hideHover();
       return;
@@ -1152,8 +1236,7 @@ const initChart = () => {
       avgPrice: point.avgPrice,
       volume: point.volume,
       amount: point.amount,
-      percent:
-        ((point.value - preClosePrice.value) / preClosePrice.value) * 100,
+      percent: ((point.value - preClosePrice.value) / preClosePrice.value) * 100,
       x: param.point.x,
       y: param.point.y,
     };
@@ -1180,10 +1263,7 @@ const fetchIntradayData = async () => {
   const stockSecid = stockConfig.value.secid;
 
   try {
-    const result = await fetchSharedIntradayData(
-      stockSecid,
-      fetchController.signal,
-    );
+    const result = await fetchSharedIntradayData(stockSecid, fetchController.signal);
     const preClose = result.preClose;
     preClosePrice.value = preClose;
     syncPreClosePriceLine();
@@ -1216,6 +1296,7 @@ const fetchIntradayData = async () => {
 
 onMounted(async () => {
   stockConfig.value = await getStockConfig();
+  await loadWatchlist();
   isExpanded.value = stockConfig.value.defaultExpanded;
   resetStockState();
 
@@ -1260,6 +1341,9 @@ onUnmounted(() => {
 
   clearPollingTimer();
   abortFetch();
+  abortQuoteFetch();
+  document.removeEventListener("pointermove", handleWidgetPointerMove);
+  document.removeEventListener("pointerup", handleWidgetPointerUp);
 
   if (chart) {
     chart.remove();
@@ -1304,37 +1388,141 @@ onUnmounted(() => {
   right: 20px;
   top: 80px;
   z-index: 9999;
-  font-family:
-    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial,
-    sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   color: #333;
   user-select: none;
 }
 
 .stock-card {
-  width: 140px;
-  height: 40px;
-  background: transparent;
-  border-radius: 12px;
-  cursor: pointer;
+  width: 150px;
+  min-height: 40px;
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  cursor: grab;
   overflow: hidden;
-  transition: all 0.4s cubic-bezier(0.25, 0.8, 0.25, 1);
+  transition:
+    width 0.28s ease,
+    transform 0.22s ease,
+    box-shadow 0.22s ease,
+    opacity 0.22s ease;
   display: flex;
   flex-direction: column;
+  touch-action: none;
+  backdrop-filter: blur(8px);
+}
+
+.stock-card:active {
+  cursor: grabbing;
 }
 
 .stock-card.is-expanded {
   height: max-content;
   width: 500px;
-  background: rgba(255, 255, 255, 1);
+  background: rgba(255, 255, 255, 0.72);
+  opacity: 1;
+  transform: none;
+}
+
+.stock-card:not(.is-expanded) .expanded-wrapper {
+  display: none;
+}
+
+.stock-card.is-snapped {
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.16);
+}
+
+.watchlist-mini-panel {
+  display: flex;
+  flex-direction: column;
+  background: transparent;
+}
+
+.watchlist-mini-titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 20px;
+  padding: 0 2px 0 8px;
+}
+
+.watchlist-mini-title {
+  min-width: 0;
+  overflow: hidden;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.watchlist-mini-controls {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.watchlist-mini-control {
+  font-size: 12px;
+  cursor: pointer;
+  padding: 4px;
+}
+
+.watchlist-mini-control:hover {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+.watchlist-mini-control.close:hover {
+  background: #ef4444;
+  color: #ffffff;
+}
+
+.watchlist-mini-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #fff;
+  cursor: pointer;
+  text-align: left;
+}
+
+.watchlist-mini-row:hover,
+.watchlist-mini-row.active {
+  background: #f8fafc;
+}
+
+.mini-stock-name {
+  min-width: 0;
+  overflow: hidden;
+  color: rgba(0,0,0,0.8);
+  font-size: 10px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mini-stock-percent {
+  flex: 0 0 auto;
+  font-size: 10px;
+  font-weight: 600;
 }
 
 .minimal-content {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  min-height: 40px;
   padding: 8px;
   font-size: 12px;
+  cursor: pointer;
 }
 
 .stock-name {

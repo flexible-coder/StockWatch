@@ -1,5 +1,5 @@
 {
-  "name": "StockWatch",
+  "name": "stockwatch",
   "type": "module",
   "version": "1.0.0",
   "private": true,
@@ -8,6 +8,7 @@
     "build": "vite build"
   },
   "dependencies": {
+    "@ant-design/icons-vue": "^7.0.1",
     "ant-design-vue": "^4.2.6",
     "lightweight-charts": "^5.1.0",
     "vue": "^3.5.30"

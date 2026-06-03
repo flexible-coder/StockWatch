@@ -86,8 +86,8 @@ export const normalizeStockConfig = (value: Partial<StockConfig> | null | undefi
     defaultExpanded:
       typeof next.defaultExpanded === "boolean" ? next.defaultExpanded : DEFAULT_STOCK_CONFIG.defaultExpanded,
     position: {
-      top: normalizeNumber(next.position?.top, DEFAULT_STOCK_CONFIG.position.top, 8, 600),
-      right: normalizeNumber(next.position?.right, DEFAULT_STOCK_CONFIG.position.right, 8, 600),
+      top: normalizeNumber(next.position?.top, DEFAULT_STOCK_CONFIG.position.top, 8, 10000),
+      right: normalizeNumber(next.position?.right, DEFAULT_STOCK_CONFIG.position.right, 8, 10000),
     },
     tradingPollIntervalMs: normalizeNumber(
       next.tradingPollIntervalMs,
