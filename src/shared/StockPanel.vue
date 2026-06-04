@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, h, onUnmounted, ref, watch } from "vue";
-import { message } from "ant-design-vue";
 import {
   ArrowLeftIcon,
   BarChartIcon,
@@ -15,7 +14,6 @@ import {
 import IntradayChart from "./IntradayChart.vue";
 import MarketIndexCards from "./MarketIndexCards.vue";
 import { fetchMarketQuotes, type MarketQuote } from "./quoteApi";
-import { saveStockConfig } from "./stockConfig";
 import StockSettingsPanel from "./StockSettingsPanel.vue";
 import WatchlistPanel from "./WatchlistPanel.vue";
 import type { WatchlistStock } from "./watchlistStorage";
@@ -116,21 +114,6 @@ const loadDetailQuote = async () => {
     isDetailQuoteLoading.value = false;
     detailQuoteController = null;
   }
-};
-
-const setDetailFloatingStock = async () => {
-  if (!selectedStock.value) return;
-  if (!/^[01]\.\d{6}$/.test(selectedStock.value.secid)) {
-    void message.warning("网页悬浮窗暂只支持 A 股分时");
-    return;
-  }
-
-  await saveStockConfig({
-    secid: selectedStock.value.secid,
-    code: selectedStock.value.code,
-    name: selectedStock.value.name,
-  });
-  void message.success(`悬浮窗已切换到 ${selectedStock.value.name}`);
 };
 
 watch(
@@ -252,9 +235,6 @@ onUnmounted(() => {
                 <span>{{ formatSignedNumber(detailQuote?.change) }}</span>
                 <strong>{{ formatSignedPercent(detailQuote?.percent) }}</strong>
               </div>
-              <a-button size="small" @click="setDetailFloatingStock">
-                设为悬浮窗
-              </a-button>
             </section>
 
             <section class="detail-metrics">
@@ -462,7 +442,7 @@ onUnmounted(() => {
 
 .quote-summary {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px;
   padding: 12px;

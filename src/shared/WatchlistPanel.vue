@@ -1,15 +1,26 @@
-<script setup lang="ts">
-import { computed, h, onMounted, onUnmounted, ref, watch } from "vue";
+﻿<script setup lang="ts">
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { message } from "ant-design-vue";
-import { DeleteIcon, PinIcon, SearchIcon } from "./panelIcons";
+import { SearchIcon } from "./panelIcons";
 import { fetchMarketQuotes, type MarketQuote } from "./quoteApi";
-import { saveStockConfig } from "./stockConfig";
 import { searchStocks, type StockSearchResult } from "./stockSearch";
+import WatchlistContextMenu from "./WatchlistContextMenu.vue";
 import {
+  DeleteOutlined,
+  EditOutlined,
+  PlusCircleOutlined,
+  UnorderedListOutlined,
+} from "@ant-design/icons-vue";
+import {
+  DEFAULT_WATCHLIST_GROUP,
   getWatchlist,
+  getWatchlistGroups,
   normalizeWatchlist,
+  normalizeWatchlistGroups,
   saveWatchlist,
+  saveWatchlistGroups,
   toWatchlistStock,
+  WATCHLIST_GROUPS_STORAGE_KEY,
   WATCHLIST_STORAGE_KEY,
   type WatchlistStock,
 } from "./watchlistStorage";
@@ -32,6 +43,7 @@ const emit = defineEmits<{
 }>();
 
 const watchlist = ref<WatchlistStock[]>([]);
+const watchlistGroups = ref<string[]>([]);
 const quoteBySecid = ref<Record<string, MarketQuote>>({});
 const searchText = ref("");
 const searchOptions = ref<AutoCompleteOption[]>([]);
@@ -41,17 +53,75 @@ const isSearching = ref(false);
 const isRefreshing = ref(false);
 const hasError = ref(false);
 const lastUpdatedAt = ref<number | null>(null);
+const draggedSecid = ref<string | null>(null);
+const dragOverSecid = ref<string | null>(null);
+const activeGroup = ref("__all__");
+const contextMenu = ref({
+  open: false,
+  secid: "",
+  x: 0,
+  y: 0,
+});
+const noteModalOpen = ref(false);
+const noteDraft = ref("");
+const noteTargetSecid = ref("");
+const groupManagerOpen = ref(false);
+const newGroupName = ref("");
+const editingGroupName = ref("");
+const editingGroupDraft = ref("");
 
 let searchController: AbortController | null = null;
 let quoteController: AbortController | null = null;
 let refreshTimer: ReturnType<typeof window.setInterval> | null = null;
 let searchSerial = 0;
+let sortStartY = 0;
+let sortInitialOrder: string[] = [];
+let sortHasMoved = false;
+let suppressNextRowClick = false;
+let suppressRowClickTimer: ReturnType<typeof window.setTimeout> | null = null;
 
+const getStockGroup = (stock: WatchlistStock) =>
+  stock.group?.trim() || DEFAULT_WATCHLIST_GROUP;
+
+const stockGroupNames = computed(() =>
+  Array.from(new Set(watchlist.value.map(getStockGroup))),
+);
+const groupNames = computed(() =>
+  normalizeWatchlistGroups([...watchlistGroups.value, ...stockGroupNames.value]),
+);
+const groupCountByName = computed(() =>
+  Object.fromEntries(
+    groupNames.value.map((group) => [
+      group,
+      watchlist.value.filter((stock) => getStockGroup(stock) === group).length,
+    ]),
+  ),
+);
+const displayedWatchlist = computed(() =>
+  activeGroup.value === "__all__"
+    ? watchlist.value
+    : watchlist.value.filter((stock) => getStockGroup(stock) === activeGroup.value),
+);
 const watchlistRows = computed(() =>
-  watchlist.value.map((stock) => ({
+  displayedWatchlist.value.map((stock) => ({
     stock,
     quote: quoteBySecid.value[stock.secid],
   })),
+);
+const contextMenuStockIndex = computed(() =>
+  displayedWatchlist.value.findIndex(
+    (stock) => stock.secid === contextMenu.value.secid,
+  ),
+);
+const contextMenuStock = computed(() =>
+  watchlist.value.find((stock) => stock.secid === contextMenu.value.secid) ??
+  null,
+);
+const canMoveContextStockTop = computed(() => contextMenuStockIndex.value > 0);
+const canMoveContextStockBottom = computed(
+  () =>
+    contextMenuStockIndex.value >= 0 &&
+    contextMenuStockIndex.value < displayedWatchlist.value.length - 1,
 );
 
 const connectionText = computed(() =>
@@ -149,7 +219,9 @@ const loadQuotes = async () => {
 const loadWatchlist = async () => {
   isLoading.value = true;
   try {
+    watchlistGroups.value = await getWatchlistGroups();
     watchlist.value = await getWatchlist();
+    ensureActiveGroupExists();
     await loadQuotes();
   } finally {
     isLoading.value = false;
@@ -158,7 +230,13 @@ const loadWatchlist = async () => {
 
 const persistWatchlist = async (nextWatchlist: WatchlistStock[]) => {
   watchlist.value = await saveWatchlist(nextWatchlist);
+  ensureActiveGroupExists();
   await loadQuotes();
+};
+
+const persistGroups = async (groups: string[]) => {
+  watchlistGroups.value = await saveWatchlistGroups(groups);
+  ensureActiveGroupExists();
 };
 
 const addStock = async (stock: StockSearchResult) => {
@@ -181,18 +259,330 @@ const removeStock = async (stock: WatchlistStock) => {
   );
 };
 
-const setFloatingStock = async (stock: WatchlistStock) => {
-  if (!/^[01]\.\d{6}$/.test(stock.secid)) {
-    void message.warning("网页悬浮窗暂只支持 A 股分时");
+const updateStock = async (
+  stock: WatchlistStock,
+  patch: Partial<Pick<WatchlistStock, "group" | "note">>,
+) => {
+  await persistWatchlist(
+    watchlist.value.map((item) =>
+      item.secid === stock.secid ? { ...item, ...patch } : item,
+    ),
+  );
+};
+
+const reindexWatchlist = (items: WatchlistStock[]) =>
+  items.map((stock, index) => ({
+    ...stock,
+    addedAt: index + 1,
+  }));
+
+const reorderWatchlistStock = (sourceSecid: string, targetSecid: string) => {
+  if (sourceSecid === targetSecid) return false;
+  const sourceIndex = watchlist.value.findIndex(
+    (stock) => stock.secid === sourceSecid,
+  );
+  const targetIndex = watchlist.value.findIndex(
+    (stock) => stock.secid === targetSecid,
+  );
+  if (sourceIndex < 0 || targetIndex < 0) return false;
+
+  const nextWatchlist = [...watchlist.value];
+  const [sourceStock] = nextWatchlist.splice(sourceIndex, 1);
+  nextWatchlist.splice(targetIndex, 0, sourceStock);
+  watchlist.value = reindexWatchlist(nextWatchlist);
+  return true;
+};
+
+const moveStockToEdge = async (stock: WatchlistStock, edge: "top" | "bottom") => {
+  const sourceIndex = watchlist.value.findIndex(
+    (item) => item.secid === stock.secid,
+  );
+  if (sourceIndex < 0) return;
+
+  const nextWatchlist = [...watchlist.value];
+  const [sourceStock] = nextWatchlist.splice(sourceIndex, 1);
+  const peerSecids = displayedWatchlist.value
+    .filter((item) => item.secid !== stock.secid)
+    .map((item) => item.secid);
+
+  if (peerSecids.length === 0) {
+    nextWatchlist.splice(sourceIndex, 0, sourceStock);
     return;
   }
 
-  await saveStockConfig({
+  if (edge === "top") {
+    const targetIndex = nextWatchlist.findIndex(
+      (item) => item.secid === peerSecids[0],
+    );
+    nextWatchlist.splice(Math.max(0, targetIndex), 0, sourceStock);
+  } else {
+    const targetIndex = nextWatchlist.findIndex(
+      (item) => item.secid === peerSecids[peerSecids.length - 1],
+    );
+    nextWatchlist.splice(targetIndex + 1, 0, sourceStock);
+  }
+
+  await persistWatchlist(reindexWatchlist(nextWatchlist));
+};
+
+const closeContextMenu = () => {
+  contextMenu.value = {
+    ...contextMenu.value,
+    open: false,
+  };
+};
+
+const handleDocumentClick = () => {
+  if (!contextMenu.value.open) return;
+  closeContextMenu();
+};
+
+const handleDocumentKeydown = (event: KeyboardEvent) => {
+  if (event.key !== "Escape") return;
+  closeContextMenu();
+};
+
+const openContextMenu = (event: MouseEvent, stock: WatchlistStock) => {
+  event.preventDefault();
+  contextMenu.value = {
+    open: true,
     secid: stock.secid,
-    code: stock.code,
-    name: stock.name,
+    x: Math.min(event.clientX, window.innerWidth - 128),
+    y: Math.min(event.clientY, window.innerHeight - 116),
+  };
+};
+
+const moveContextStockTop = async () => {
+  const stock = contextMenuStock.value;
+  closeContextMenu();
+  if (!stock) return;
+  await moveStockToEdge(stock, "top");
+};
+
+const moveContextStockBottom = async () => {
+  const stock = contextMenuStock.value;
+  closeContextMenu();
+  if (!stock) return;
+  await moveStockToEdge(stock, "bottom");
+};
+
+const removeContextStock = async () => {
+  const stock = contextMenuStock.value;
+  closeContextMenu();
+  if (!stock) return;
+  await removeStock(stock);
+};
+
+const editContextStockNote = () => {
+  const stock = contextMenuStock.value;
+  closeContextMenu();
+  if (!stock) return;
+  noteTargetSecid.value = stock.secid;
+  noteDraft.value = stock.note ?? "";
+  noteModalOpen.value = true;
+};
+
+const saveNote = async () => {
+  const stock = watchlist.value.find(
+    (item) => item.secid === noteTargetSecid.value,
+  );
+  if (!stock) return;
+
+  await updateStock(stock, {
+    note: noteDraft.value.trim() || undefined,
   });
-  void message.success(`悬浮窗已切换到 ${stock.name}`);
+  noteModalOpen.value = false;
+};
+
+const moveContextStockGroup = async (group: string) => {
+  const stock = contextMenuStock.value;
+  closeContextMenu();
+  if (!stock) return;
+  await updateStock(stock, { group });
+  activeGroup.value = group;
+};
+
+const openGroupManager = () => {
+  groupManagerOpen.value = true;
+  newGroupName.value = "";
+  editingGroupName.value = "";
+  editingGroupDraft.value = "";
+};
+
+const addGroup = async () => {
+  const group = newGroupName.value.trim();
+  if (!group) return;
+  if (groupNames.value.includes(group)) {
+    void message.info(`${group} 已存在`);
+    return;
+  }
+
+  await persistGroups([...groupNames.value, group]);
+  activeGroup.value = group;
+  newGroupName.value = "";
+};
+
+const startEditGroup = (group: string) => {
+  editingGroupName.value = group;
+  editingGroupDraft.value = group;
+};
+
+const cancelEditGroup = () => {
+  editingGroupName.value = "";
+  editingGroupDraft.value = "";
+};
+
+const saveEditedGroup = async () => {
+  const oldGroup = editingGroupName.value;
+  const nextGroup = editingGroupDraft.value.trim();
+  if (!oldGroup || !nextGroup) return;
+  if (nextGroup !== oldGroup && groupNames.value.includes(nextGroup)) {
+    void message.info(`${nextGroup} 已存在`);
+    return;
+  }
+
+  const nextGroups = groupNames.value.map((group) =>
+    group === oldGroup ? nextGroup : group,
+  );
+  const nextWatchlist = watchlist.value.map((stock) =>
+    getStockGroup(stock) === oldGroup ? { ...stock, group: nextGroup } : stock,
+  );
+
+  watchlistGroups.value = await saveWatchlistGroups(nextGroups);
+  watchlist.value = await saveWatchlist(nextWatchlist);
+  activeGroup.value = activeGroup.value === oldGroup ? nextGroup : activeGroup.value;
+  cancelEditGroup();
+};
+
+const removeGroup = async (group: string) => {
+  const nextGroups = groupNames.value.filter((item) => item !== group);
+  const nextWatchlist = watchlist.value.map((stock) =>
+    getStockGroup(stock) === group
+      ? { ...stock, group: DEFAULT_WATCHLIST_GROUP }
+      : stock,
+  );
+
+  watchlistGroups.value = await saveWatchlistGroups(nextGroups);
+  watchlist.value = await saveWatchlist(nextWatchlist);
+  if (activeGroup.value === group) {
+    activeGroup.value = DEFAULT_WATCHLIST_GROUP;
+  }
+};
+
+const selectGroup = (group: string) => {
+  activeGroup.value = group;
+};
+
+const ensureActiveGroupExists = () => {
+  if (activeGroup.value === "__all__") return;
+  if (groupNames.value.includes(activeGroup.value)) return;
+  activeGroup.value = "__all__";
+};
+
+const suppressFollowingRowClick = () => {
+  suppressNextRowClick = true;
+  if (suppressRowClickTimer !== null) {
+    window.clearTimeout(suppressRowClickTimer);
+  }
+  suppressRowClickTimer = window.setTimeout(() => {
+    suppressNextRowClick = false;
+    suppressRowClickTimer = null;
+  }, 250);
+};
+
+const handleRowClick = (stock: WatchlistStock) => {
+  if (suppressNextRowClick) {
+    suppressNextRowClick = false;
+    if (suppressRowClickTimer !== null) {
+      window.clearTimeout(suppressRowClickTimer);
+      suppressRowClickTimer = null;
+    }
+    return;
+  }
+
+  emit("select", stock);
+};
+
+const hasSortOrderChanged = () =>
+  sortInitialOrder.length === watchlist.value.length &&
+  watchlist.value.some((stock, index) => stock.secid !== sortInitialOrder[index]);
+
+const findStockRowAtPoint = (event: PointerEvent | MouseEvent) => {
+  const target = document.elementFromPoint(event.clientX, event.clientY);
+  if (!(target instanceof HTMLElement)) return null;
+  return target.closest<HTMLElement>(".stock-row");
+};
+
+const handleSortMove = (event: PointerEvent | MouseEvent) => {
+  const sourceSecid = draggedSecid.value;
+  if (!sourceSecid) return;
+
+  if (!sortHasMoved && Math.abs(event.clientY - sortStartY) <= 6) return;
+  sortHasMoved = true;
+  suppressFollowingRowClick();
+  event.preventDefault();
+
+  const targetSecid = findStockRowAtPoint(event)?.dataset.secid;
+  if (!targetSecid || targetSecid === sourceSecid) return;
+
+  dragOverSecid.value = targetSecid;
+  reorderWatchlistStock(sourceSecid, targetSecid);
+};
+
+const handleSortPointerMove = (event: PointerEvent) => {
+  handleSortMove(event);
+};
+
+const handleSortMouseMove = (event: MouseEvent) => {
+  handleSortMove(event);
+};
+
+const handleSortEnd = () => {
+  const shouldPersist = sortHasMoved && hasSortOrderChanged();
+  if (sortHasMoved) {
+    suppressFollowingRowClick();
+  }
+  draggedSecid.value = null;
+  dragOverSecid.value = null;
+  sortHasMoved = false;
+  document.removeEventListener("pointermove", handleSortPointerMove);
+  document.removeEventListener("pointerup", handleSortPointerUp);
+  document.removeEventListener("mousemove", handleSortMouseMove);
+  document.removeEventListener("mouseup", handleSortMouseUp);
+
+  if (shouldPersist) {
+    void persistWatchlist(watchlist.value);
+  }
+};
+
+const handleSortPointerUp = () => {
+  handleSortEnd();
+};
+
+const handleSortMouseUp = () => {
+  handleSortEnd();
+};
+
+const beginSort = (clientY: number, stock: WatchlistStock) => {
+  draggedSecid.value = stock.secid;
+  dragOverSecid.value = null;
+  sortStartY = clientY;
+  sortInitialOrder = watchlist.value.map((item) => item.secid);
+  sortHasMoved = false;
+};
+
+const handleSortPointerDown = (event: PointerEvent, stock: WatchlistStock) => {
+  if (event.button !== 0) return;
+  beginSort(event.clientY, stock);
+  document.addEventListener("pointermove", handleSortPointerMove);
+  document.addEventListener("pointerup", handleSortPointerUp);
+};
+
+const handleSortMouseDown = (event: MouseEvent, stock: WatchlistStock) => {
+  if (event.button !== 0 || draggedSecid.value) return;
+  beginSort(event.clientY, stock);
+  document.addEventListener("mousemove", handleSortMouseMove);
+  document.addEventListener("mouseup", handleSortMouseUp);
 };
 
 const handleSearch = async (keyword: string) => {
@@ -217,7 +607,7 @@ const handleSearch = async (keyword: string) => {
     if (error instanceof DOMException && error.name === "AbortError") return;
     searchOptions.value = [];
     optionByValue.value = {};
-    void message.warning("暂时没查到匹配股票");
+    void message.warning("暂时没有查到匹配股票");
   } finally {
     if (currentSerial === searchSerial) {
       isSearching.value = false;
@@ -256,9 +646,17 @@ const handleStorageChange = (
 ) => {
   if (areaName !== "sync") return;
   const nextValue = changes[WATCHLIST_STORAGE_KEY]?.newValue;
-  if (!nextValue) return;
-  watchlist.value = normalizeWatchlist(nextValue);
-  void loadQuotes();
+  if (nextValue) {
+    watchlist.value = normalizeWatchlist(nextValue);
+    ensureActiveGroupExists();
+    void loadQuotes();
+  }
+
+  const nextGroups = changes[WATCHLIST_GROUPS_STORAGE_KEY]?.newValue;
+  if (nextGroups) {
+    watchlistGroups.value = normalizeWatchlistGroups(nextGroups);
+    ensureActiveGroupExists();
+  }
 };
 
 onMounted(() => {
@@ -266,6 +664,8 @@ onMounted(() => {
   refreshTimer = window.setInterval(() => {
     void loadQuotes();
   }, 15000);
+  document.addEventListener("click", handleDocumentClick);
+  document.addEventListener("keydown", handleDocumentKeydown);
 
   if (typeof chrome !== "undefined") {
     chrome.storage?.onChanged?.addListener(handleStorageChange);
@@ -275,6 +675,16 @@ onMounted(() => {
 onUnmounted(() => {
   searchController?.abort();
   quoteController?.abort();
+  document.removeEventListener("pointermove", handleSortPointerMove);
+  document.removeEventListener("pointerup", handleSortPointerUp);
+  document.removeEventListener("mousemove", handleSortMouseMove);
+  document.removeEventListener("mouseup", handleSortMouseUp);
+  if (suppressRowClickTimer !== null) {
+    window.clearTimeout(suppressRowClickTimer);
+    suppressRowClickTimer = null;
+  }
+  document.removeEventListener("click", handleDocumentClick);
+  document.removeEventListener("keydown", handleDocumentKeydown);
   if (refreshTimer !== null) window.clearInterval(refreshTimer);
   if (typeof chrome !== "undefined") {
     chrome.storage?.onChanged?.removeListener(handleStorageChange);
@@ -322,30 +732,151 @@ watch(
       </div>
     </a-modal>
 
+    <a-modal
+      v-model:open="noteModalOpen"
+      title="编辑备注"
+      ok-text="保存"
+      cancel-text="取消"
+      width="360px"
+      @ok="saveNote"
+    >
+      <a-textarea
+        v-model:value="noteDraft"
+        :auto-size="{ minRows: 3, maxRows: 5 }"
+        maxlength="80"
+        placeholder="输入备注，例如：等回踩、观察业绩、核心仓位"
+      />
+    </a-modal>
+
+    <a-modal
+      v-model:open="groupManagerOpen"
+      title="分组管理"
+      :footer="null"
+      width="360px"
+    >
+      <div class="group-manager">
+        <div v-for="group in groupNames" :key="group" class="group-manager-row">
+          <UnorderedListOutlined class="group-drag-icon" />
+          <template v-if="editingGroupName === group">
+            <a-input
+              v-model:value="editingGroupDraft"
+              size="small"
+              maxlength="12"
+              @press-enter="saveEditedGroup"
+            />
+            <button type="button" @click="saveEditedGroup">保存</button>
+            <button type="button" @click="cancelEditGroup">取消</button>
+          </template>
+          <template v-else>
+            <span>{{ group }}</span>
+            <button
+              class="group-icon-button"
+              type="button"
+              title="编辑分组"
+              @click="startEditGroup(group)"
+            >
+              <EditOutlined />
+            </button>
+            <button
+              class="group-icon-button danger"
+              type="button"
+              title="删除分组"
+              @click="removeGroup(group)"
+            >
+              <DeleteOutlined />
+            </button>
+          </template>
+        </div>
+        <div class="group-create-row">
+          <a-input
+            v-model:value="newGroupName"
+            size="small"
+            maxlength="12"
+            placeholder="新建分组"
+            @press-enter="addGroup"
+          />
+          <button type="button" @click="addGroup">
+            <PlusCircleOutlined />
+            新建分组
+          </button>
+        </div>
+      </div>
+    </a-modal>
+
     <a-skeleton v-if="isLoading" active :paragraph="{ rows: 7 }" />
 
-    <div v-else-if="watchlistRows.length === 0" class="empty-state">
+    <div v-else-if="watchlist.length === 0" class="empty-state">
       <SearchIcon />
       <strong>暂无自选股</strong>
       <span>点击右上角搜索按钮添加第一只股票</span>
     </div>
 
-    <div v-else class="watchlist">
+    <template v-else>
+      <div class="group-tabs">
+        <button
+          type="button"
+          :class="{ active: activeGroup === '__all__' }"
+          @click="selectGroup('__all__')"
+        >
+          全部
+          <span>{{ watchlist.length }}</span>
+        </button>
+        <button
+          v-for="group in groupNames"
+          :key="group"
+          type="button"
+          :class="{ active: activeGroup === group }"
+          @click="selectGroup(group)"
+        >
+          {{ group }}
+          <span>{{ groupCountByName[group] }}</span>
+        </button>
+        <button
+          class="group-manage-button"
+          type="button"
+          title="分组管理"
+          @click="openGroupManager"
+        >
+          <EditOutlined />
+        </button>
+      </div>
+
+    <div class="watchlist">
       <article
         v-for="{ stock, quote } in watchlistRows"
         :key="stock.secid"
         class="stock-row"
+        :class="{
+          dragging: draggedSecid === stock.secid,
+          'drag-over': dragOverSecid === stock.secid,
+        }"
+        :data-secid="stock.secid"
         role="button"
         tabindex="0"
-        @click="emit('select', stock)"
+        @click="handleRowClick(stock)"
+        @contextmenu="openContextMenu($event, stock)"
         @keydown.enter="emit('select', stock)"
       >
+        <button
+          class="drag-handle"
+          type="button"
+          title="拖拽排序"
+          @click.stop
+          @keydown.stop
+          @pointerdown.stop="handleSortPointerDown($event, stock)"
+          @mousedown.stop="handleSortMouseDown($event, stock)"
+        >
+          <UnorderedListOutlined />
+        </button>
+
         <div class="stock-left">
           <div class="stock-name-line">
             <strong>{{ quote?.name ?? stock.name }}</strong>
             <span>{{ formatCode(quote ?? stock) }}</span>
           </div>
-          <div class="stock-meta">成交量 {{ formatLargeNumber(quote?.volume) }}</div>
+          <div class="stock-meta" :class="{ note: !!stock.note }">
+            {{ stock.note || `成交量 ${formatLargeNumber(quote?.volume)}` }}
+          </div>
         </div>
 
         <div class="stock-extra">
@@ -354,34 +885,33 @@ watch(
         </div>
 
         <div class="stock-right">
-          <div class="stock-price">{{ formatPrice(quote?.price) }}</div>
+          <div class="stock-price" :class="getTrendClass(quote?.percent)">
+            {{ formatPrice(quote?.price) }}
+          </div>
           <div class="stock-change" :class="getTrendClass(quote?.percent)">
             {{ formatSignedNumber(quote?.change) }}
             ({{ formatSignedPercent(quote?.percent) }})
           </div>
         </div>
 
-        <div class="row-actions">
-          <a-tooltip title="设为悬浮窗">
-            <a-button
-              type="text"
-              size="small"
-              :icon="h(PinIcon)"
-              @click.stop="setFloatingStock(stock)"
-            />
-          </a-tooltip>
-          <a-tooltip title="移除">
-            <a-button
-              type="text"
-              size="small"
-              danger
-              :icon="h(DeleteIcon)"
-              @click.stop="removeStock(stock)"
-            />
-          </a-tooltip>
-        </div>
       </article>
     </div>
+    </template>
+
+    <WatchlistContextMenu
+      :open="contextMenu.open"
+      :x="contextMenu.x"
+      :y="contextMenu.y"
+      :groups="groupNames"
+      :current-group="contextMenuStock ? getStockGroup(contextMenuStock) : ''"
+      :can-move-top="canMoveContextStockTop"
+      :can-move-bottom="canMoveContextStockBottom"
+      @top="moveContextStockTop"
+      @bottom="moveContextStockBottom"
+      @edit-note="editContextStockNote"
+      @move-group="moveContextStockGroup"
+      @remove="removeContextStock"
+    />
 
     <footer class="watchlist-footer">
       <span>最后更新：{{ formatLastUpdated() }}</span>
@@ -411,20 +941,144 @@ watch(
   width: 100%;
 }
 
+.group-tabs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px 7px;
+  border-bottom: 1px solid #e5e7eb;
+  overflow-x: auto;
+}
+
+.group-tabs button {
+  height: 28px;
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 5px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #64748b;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.group-tabs button:hover,
+.group-tabs button.active {
+  background: #eef2ff;
+  color: #4f46e5;
+}
+
+.group-tabs span {
+  color: inherit;
+  font-size: 11px;
+  opacity: 0.72;
+}
+
+.group-tabs .group-manage-button {
+  width: 28px;
+  justify-content: center;
+  padding: 0;
+  margin-left: auto;
+  color: #ff4d1f;
+  font-size: 16px;
+}
+
+.group-manager {
+  display: flex;
+  flex-direction: column;
+}
+
+.group-manager-row {
+  min-height: 40px;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid #eef2f7;
+}
+
+.group-manager-row span {
+  min-width: 0;
+  overflow: hidden;
+  color: #111827;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.group-drag-icon {
+  color: #64748b;
+  font-size: 16px;
+}
+
+.group-manager-row button,
+.group-create-row button {
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #4f46e5;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.group-manager-row button:hover,
+.group-create-row button:hover {
+  background: #eef2ff;
+}
+
+.group-manager-row .group-icon-button {
+  width: 28px;
+  padding: 0;
+  color: #ff4d1f;
+  font-size: 16px;
+}
+
+.group-manager-row .group-icon-button.danger {
+  color: #dc2626;
+}
+
+.group-manager-row .group-icon-button.danger:hover {
+  background: #fef2f2;
+}
+
+.group-create-row button {
+  color: #ff4d1f;
+}
+
+.group-create-row button svg {
+  font-size: 15px;
+}
+
+.group-create-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding-top: 12px;
+}
+
 .watchlist {
   min-height: 0;
   overflow: auto;
-  border-top: 1px solid #e5e7eb;
 }
 
 .stock-row {
   position: relative;
-  min-height: 72px;
+  min-height: 52px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 12px;
-  padding: 10px 14px;
+  gap: 8px;
+  padding: 7px 10px;
   border-bottom: 1px solid #e5e7eb;
   background: #fff;
   cursor: pointer;
@@ -432,6 +1086,42 @@ watch(
 
 .stock-row:hover {
   background: #f8fafc;
+}
+
+.stock-row.dragging {
+  opacity: 0.58;
+}
+
+.stock-row.drag-over {
+  box-shadow: inset 2px 0 0 #1890ff;
+}
+
+.drag-handle {
+  width: 18px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #64748b;
+  cursor: grab;
+}
+
+.drag-handle:active {
+  cursor: grabbing;
+}
+
+.drag-handle:hover {
+  background: #eef2f7;
+  color: #374151;
+}
+
+.drag-handle svg {
+  width: 18px;
+  height: 18px;
 }
 
 .stock-left,
@@ -443,36 +1133,40 @@ watch(
 .stock-name-line {
   display: flex;
   align-items: baseline;
-  gap: 10px;
+  gap: 6px;
   min-width: 0;
 }
 
 .stock-name-line strong {
   color: #111827;
-  font-size: 14px;
-  line-height: 1.25;
+  font-size: 12px;
+  line-height: 1.2;
   white-space: nowrap;
 }
 
 .stock-name-line span {
   color: #4b5563;
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .stock-meta,
 .stock-extra {
   color: #4b5563;
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .stock-meta {
-  margin-top: 8px;
+  margin-top: 4px;
+}
+
+.stock-meta.note {
+  color: #7c3aed;
 }
 
 .stock-extra {
   display: none;
   flex-direction: column;
-  gap: 5px;
+  gap: 3px;
   white-space: nowrap;
 }
 
@@ -481,16 +1175,15 @@ watch(
 }
 
 .stock-price {
-  color: #1890ff;
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 700;
-  line-height: 1.2;
+  line-height: 1.15;
 }
 
 .stock-change {
-  margin-top: 7px;
-  font-size: 12px;
-  line-height: 1.2;
+  margin-top: 4px;
+  font-size: 11px;
+  line-height: 1.15;
 }
 
 .up {
@@ -505,32 +1198,11 @@ watch(
   color: #6b7280;
 }
 
-.row-actions {
-  position: absolute;
-  right: 8px;
-  top: 6px;
-  display: none;
-  gap: 2px;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.96);
-}
-
-.row-actions :deep(.ant-btn) {
-  width: 24px;
-  height: 24px;
-  padding: 0;
-}
-
-.row-actions :deep(svg),
+.drag-handle :deep(svg),
 .stock-search :deep(svg),
 .empty-state svg {
   width: 14px;
   height: 14px;
-}
-
-.stock-row:hover .row-actions {
-  display: flex;
 }
 
 .empty-state {
@@ -552,22 +1224,22 @@ watch(
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 7px 16px;
+  padding: 6px 12px;
   border-top: 1px solid #e5e7eb;
   color: #4b5563;
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .connection {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: 5px;
   white-space: nowrap;
 }
 
 .connection i {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   background: #ff4d4f;
 }
@@ -577,7 +1249,7 @@ watch(
 }
 
 .watchlist-panel.is-sidepanel .stock-row {
-  grid-template-columns: minmax(150px, 1fr) minmax(120px, 0.7fr) auto;
+  grid-template-columns: 18px minmax(130px, 1fr) minmax(110px, 0.7fr) auto;
 }
 
 .watchlist-panel.is-sidepanel .stock-extra {
@@ -586,7 +1258,7 @@ watch(
 
 @media (max-width: 520px) {
   .watchlist-panel.is-sidepanel .stock-row {
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: 18px minmax(0, 1fr) auto;
   }
 
   .watchlist-panel.is-sidepanel .stock-extra {
@@ -596,11 +1268,13 @@ watch(
 
 @media (max-width: 330px) {
   .stock-row {
-    grid-template-columns: 1fr;
+    grid-template-columns: 18px minmax(0, 1fr);
   }
 
   .stock-right {
+    grid-column: 2;
     text-align: left;
   }
 }
 </style>
+

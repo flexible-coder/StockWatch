@@ -59,15 +59,8 @@ export const BellIcon = createIcon([
 
 export const ArrowLeftIcon = createIcon(["M19 12H5", "m12 19-7-7 7-7"]);
 
-export const DeleteIcon = createIcon([
-  "M3 6h18",
-  "M8 6V4h8v2",
-  "M6 6l1 16h10l1-16",
-  "M10 11v6",
-  "M14 11v6",
-]);
-
-export const PinIcon = createIcon([
-  "M12 17v5",
-  "M8 3h8l-1 7 3 3v2H6v-2l3-3-1-7Z",
+export const DragHandleIcon = createIcon([
+  "M7 8h10",
+  "M7 12h10",
+  "M7 16h10",
 ]);

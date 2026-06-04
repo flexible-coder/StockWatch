@@ -29,6 +29,11 @@ const formatSignedPercent = (value: number | null) => {
   return `${value > 0 ? "+" : ""}${value.toFixed(2)}%`;
 };
 
+const formatSignedNumber = (value: number | null) => {
+  if (value === null) return "--";
+  return `${value > 0 ? "+" : ""}${value.toFixed(2)}`;
+};
+
 const getTrendClass = (value: number | null) => {
   if (value === null || value === 0) return "flat";
   return value > 0 ? "up" : "down";
@@ -69,6 +74,7 @@ watch(
       v-for="(quote, index) in quoteCards"
       :key="INDEX_SECIDS[index]"
       class="index-card"
+      :class="getTrendClass(quote?.percent ?? null)"
     >
       <a-skeleton
         v-if="isLoading && !quote"
@@ -80,11 +86,11 @@ watch(
         <div class="index-name">
           {{ quote?.name ?? ["上证指数", "深证成指", "创业板指"][index] }}
         </div>
-        <div class="index-price">{{ formatNumber(quote?.price ?? null) }}</div>
+        <div class="index-price" :class="getTrendClass(quote?.percent ?? null)">
+          {{ formatNumber(quote?.price ?? null) }}
+        </div>
         <div class="index-change" :class="getTrendClass(quote?.percent ?? null)">
-          <span class="trend-mark">{{
-            (quote?.percent ?? 0) >= 0 ? "↗" : "↘"
-          }}</span>
+          {{ formatSignedNumber(quote?.change ?? null) }}
           {{ formatSignedPercent(quote?.percent ?? null) }}
         </div>
       </template>
@@ -98,44 +104,53 @@ watch(
   position: relative;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-  padding: 0 16px 16px;
+  gap: 12px;
+  padding: 0 16px 14px;
 }
 
 .index-card {
-  min-height: 76px;
-  padding: 10px;
-  border: 1px solid #e5e7eb;
+  min-height: 68px;
+  padding: 9px 10px;
+  border: 1px solid rgba(220, 240, 231, 0.85);
   border-radius: 8px;
-  background: #fff;
+  background: #f2fbf6;
+  text-align: center;
+}
+
+.index-card.up {
+  border-color: rgba(248, 201, 201, 0.7);
+  background: #fff5f5;
+}
+
+.index-card.down {
+  border-color: rgba(188, 230, 207, 0.8);
+  background: #effaf4;
+}
+
+.index-card.flat {
+  border-color: #e5e7eb;
+  background: #f8fafc;
 }
 
 .index-name {
-  margin-bottom: 6px;
-  color: #4b5563;
-  font-size: 12px;
+  margin-bottom: 3px;
+  color: #111827;
+  font-size: 13px;
+  font-weight: 500;
   line-height: 1.2;
 }
 
 .index-price {
-  color: #111827;
-  font-size: 15px;
+  font-size: 18px;
   font-weight: 700;
   line-height: 1.15;
 }
 
 .index-change {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  margin-top: 8px;
+  margin-top: 3px;
   font-size: 12px;
-  font-weight: 600;
-}
-
-.trend-mark {
-  font-size: 12px;
-  line-height: 1;
+  font-weight: 500;
+  line-height: 1.15;
 }
 
 .up {
