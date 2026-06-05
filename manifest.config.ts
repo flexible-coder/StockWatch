@@ -17,8 +17,17 @@ export default defineManifest({
   content_scripts: [
     {
       js: ['src/content/main.ts'],
-      matches: ['https://*/*'],
-      exclude_matches: ['http://127.0.0.1/*'],
+      matches: [
+        'http://localhost:*/*', 
+        'https://localhost:*/*', 
+        'http://127.0.0.1:*/*', 
+        'https://127.0.0.1:*/*',
+        'http://0.0.0.0:*/*',
+        'https://0.0.0.0:*/*'
+      ],
+      exclude_matches: [],
+      // matches: ['https://*/*'],
+      // exclude_matches: ['http://127.0.0.1/*'],
     },
   ],
   permissions: ['sidePanel', 'contentSettings', 'storage'],
