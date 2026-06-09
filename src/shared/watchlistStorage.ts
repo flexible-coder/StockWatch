@@ -1,4 +1,3 @@
-import { DEFAULT_STOCK_CONFIG } from "./stockConfig";
 import type { StockSearchResult } from "./stockSearch";
 
 export interface WatchlistStock {
@@ -13,66 +12,29 @@ export interface WatchlistStock {
 export const WATCHLIST_STORAGE_KEY = "tickeye.watchlist";
 export const WATCHLIST_GROUPS_STORAGE_KEY = "tickeye.watchlistGroups";
 export const DEFAULT_WATCHLIST_GROUP = "观察股";
-export const DEFAULT_WATCHLIST_GROUPS = ["价投", DEFAULT_WATCHLIST_GROUP, "ETF"];
+export const DEFAULT_WATCHLIST_GROUPS = [DEFAULT_WATCHLIST_GROUP];
 
 export const DEFAULT_WATCHLIST: WatchlistStock[] = [
   {
-    secid: DEFAULT_STOCK_CONFIG.secid,
-    code: DEFAULT_STOCK_CONFIG.code,
-    name: DEFAULT_STOCK_CONFIG.name,
+    secid: "1.000001",
+    code: "000001",
+    name: "上证指数",
     group: DEFAULT_WATCHLIST_GROUP,
     addedAt: 1,
   },
-  {
-    secid: "0.300750",
-    code: "300750",
-    name: "宁德时代",
-    group: DEFAULT_WATCHLIST_GROUP,
-    addedAt: 2,
-  },
-  {
-    secid: "1.601318",
-    code: "601318",
-    name: "中国平安",
-    group: DEFAULT_WATCHLIST_GROUP,
-    addedAt: 3,
-  },
-  {
-    secid: "1.600036",
-    code: "600036",
-    name: "招商银行",
-    group: DEFAULT_WATCHLIST_GROUP,
-    addedAt: 4,
-  },
-  {
-    secid: "0.002594",
-    code: "002594",
-    name: "比亚迪",
-    group: DEFAULT_WATCHLIST_GROUP,
-    addedAt: 5,
-  },
-  {
-    secid: "116.00700",
-    code: "00700",
-    name: "腾讯控股",
-    group: "价投",
-    addedAt: 6,
-  },
-  {
-    secid: "116.03690",
-    code: "03690",
-    name: "美团-W",
-    group: "价投",
-    addedAt: 7,
-  },
-  {
-    secid: "116.09988",
-    code: "09988",
-    name: "阿里巴巴-W",
-    group: "价投",
-    addedAt: 8,
-  },
 ];
+
+const LEGACY_DEFAULT_WATCHLIST_SECIDS = [
+  "1.600519",
+  "0.300750",
+  "1.601318",
+  "1.600036",
+  "0.002594",
+  "116.00700",
+  "116.03690",
+  "116.09988",
+];
+const LEGACY_DEFAULT_WATCHLIST_GROUPS = ["价投", DEFAULT_WATCHLIST_GROUP, "ETF"];
 
 const hasChromeStorage = () =>
   typeof chrome !== "undefined" && !!chrome.storage?.sync;
@@ -132,6 +94,16 @@ export const normalizeWatchlist = (value: unknown): WatchlistStock[] => {
   );
 };
 
+const isLegacyDefaultWatchlist = (watchlist: WatchlistStock[]) =>
+  watchlist.length === LEGACY_DEFAULT_WATCHLIST_SECIDS.length &&
+  watchlist.every(
+    (stock, index) => stock.secid === LEGACY_DEFAULT_WATCHLIST_SECIDS[index],
+  );
+
+const isLegacyDefaultGroups = (groups: string[]) =>
+  groups.length === LEGACY_DEFAULT_WATCHLIST_GROUPS.length &&
+  groups.every((group, index) => group === LEGACY_DEFAULT_WATCHLIST_GROUPS[index]);
+
 export const getWatchlist = async (): Promise<WatchlistStock[]> => {
   if (!hasChromeStorage()) return DEFAULT_WATCHLIST;
 
@@ -142,7 +114,13 @@ export const getWatchlist = async (): Promise<WatchlistStock[]> => {
     return DEFAULT_WATCHLIST;
   }
 
-  return normalizeWatchlist(stored);
+  const normalized = normalizeWatchlist(stored);
+  if (isLegacyDefaultWatchlist(normalized)) {
+    await chrome.storage.sync.set({ [WATCHLIST_STORAGE_KEY]: DEFAULT_WATCHLIST });
+    return DEFAULT_WATCHLIST;
+  }
+
+  return normalized;
 };
 
 export const getWatchlistGroups = async (): Promise<string[]> => {
@@ -157,7 +135,15 @@ export const getWatchlistGroups = async (): Promise<string[]> => {
     return DEFAULT_WATCHLIST_GROUPS;
   }
 
-  return normalizeWatchlistGroups(stored);
+  const normalized = normalizeWatchlistGroups(stored);
+  if (isLegacyDefaultGroups(normalized)) {
+    await chrome.storage.sync.set({
+      [WATCHLIST_GROUPS_STORAGE_KEY]: DEFAULT_WATCHLIST_GROUPS,
+    });
+    return DEFAULT_WATCHLIST_GROUPS;
+  }
+
+  return normalized;
 };
 
 export const saveWatchlist = async (
