@@ -18,14 +18,11 @@ export default defineManifest({
     {
       js: ['src/content/main.ts'],
       matches: [
+        'https://*/*',
         'http://localhost:*/*', 
-        'https://localhost:*/*', 
         'http://127.0.0.1:*/*', 
-        'https://127.0.0.1:*/*',
-        'http://0.0.0.0:*/*',
-        'https://0.0.0.0:*/*'
       ],
-      exclude_matches: [],
+      exclude_matches: ['https://chatgpt.com/*', 'https://chat.openai.com/*'],
       // matches: ['https://*/*'],
       // exclude_matches: ['http://127.0.0.1/*'],
     },

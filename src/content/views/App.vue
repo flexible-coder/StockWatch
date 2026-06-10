@@ -1496,7 +1496,7 @@ onUnmounted(() => {
 
 .watchlist-mini-row:hover,
 .watchlist-mini-row.active {
-  background: #f8fafc;
+  background: rgba(255,255,255,0.6);
 }
 
 .mini-stock-name {
