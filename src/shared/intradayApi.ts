@@ -27,10 +27,7 @@ type EastMoneyIntradayPayload = {
 };
 
 const INTRADAY_API_URL =
-  "http://push2.eastmoney.com/api/qt/stock/trends2/get";
-const EASTMONEY_REFERRER = "http://quote.eastmoney.com/";
-const RETRYABLE_STATUS_CODES = new Set([429, 500, 502, 503, 504]);
-const INTRADAY_RETRY_DELAY_MS = 300;
+  "https://push2.eastmoney.com/api/qt/stock/trends2/get";
 
 export const MARKET_UTC_OFFSET_HOURS = 8;
 export const MORNING_SESSION_START_MINUTE = 9 * 60 + 30;
@@ -233,56 +230,6 @@ const parseEastMoneyDateTimeToTimestamp = (
   return null;
 };
 
-const waitForRetry = (signal?: AbortSignal): Promise<void> =>
-  new Promise((resolve, reject) => {
-    if (signal?.aborted) {
-      reject(new DOMException("Aborted", "AbortError"));
-      return;
-    }
-
-    const timer = setTimeout(resolve, INTRADAY_RETRY_DELAY_MS);
-    signal?.addEventListener(
-      "abort",
-      () => {
-        clearTimeout(timer);
-        reject(new DOMException("Aborted", "AbortError"));
-      },
-      { once: true },
-    );
-  });
-
-const fetchIntradayResponse = async (
-  url: string,
-  signal?: AbortSignal,
-): Promise<Response> => {
-  const response = await fetch(url, {
-    cache: "no-store",
-    credentials: "omit",
-    headers: {
-      Accept: "application/json,text/plain,*/*",
-      "Cache-Control": "no-cache",
-    },
-    referrer: EASTMONEY_REFERRER,
-    referrerPolicy: "unsafe-url",
-    signal,
-  });
-
-  if (!RETRYABLE_STATUS_CODES.has(response.status)) return response;
-
-  await waitForRetry(signal);
-  return fetch(url, {
-    cache: "no-store",
-    credentials: "omit",
-    headers: {
-      Accept: "application/json,text/plain,*/*",
-      "Cache-Control": "no-cache",
-    },
-    referrer: EASTMONEY_REFERRER,
-    referrerPolicy: "unsafe-url",
-    signal,
-  });
-};
-
 export const fetchIntradayData = async (
   secid: string,
   signal?: AbortSignal,
@@ -297,10 +244,10 @@ export const fetchIntradayData = async (
     iscca: "0",
   });
 
-  const response = await fetchIntradayResponse(
-    `${INTRADAY_API_URL}?${query.toString()}`,
+  const response = await fetch(`${INTRADAY_API_URL}?${query.toString()}`, {
+    headers: { "Cache-Control": "no-cache" },
     signal,
-  );
+  });
 
   if (!response.ok) {
     throw new Error(`Intraday request failed: ${response.status}`);
