@@ -126,8 +126,11 @@ import {
   STOCK_CONFIG_STORAGE_KEY,
   type StockConfig,
 } from "@/shared/stockConfig";
-import { fetchIntradayData as fetchSharedIntradayData } from "@/shared/intradayApi";
-import { fetchMarketQuotes, type MarketQuote } from "@/shared/quoteApi";
+import {
+  fetchIntradayDataFromBackground,
+  fetchMarketQuotesFromBackground,
+} from "@/content/marketDataClient";
+import { type MarketQuote } from "@/shared/quoteApi";
 import {
   getWatchlist,
   normalizeWatchlist,
@@ -699,7 +702,7 @@ const fetchWidgetQuotes = async () => {
   quoteFetchController = new AbortController();
 
   try {
-    const quotes = await fetchMarketQuotes(secids, quoteFetchController.signal);
+    const quotes = await fetchMarketQuotesFromBackground(secids, quoteFetchController.signal);
     quoteBySecid.value = Object.fromEntries(quotes.map((quote) => [quote.secid, quote]));
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") return;
@@ -1263,7 +1266,7 @@ const fetchIntradayData = async () => {
   const stockSecid = stockConfig.value.secid;
 
   try {
-    const result = await fetchSharedIntradayData(stockSecid, fetchController.signal);
+    const result = await fetchIntradayDataFromBackground(stockSecid, fetchController.signal);
     const preClose = result.preClose;
     preClosePrice.value = preClose;
     syncPreClosePriceLine();

@@ -30,7 +30,8 @@ type EastMoneyQuotePayload = {
   };
 };
 
-const QUOTE_API_URL = "https://push2.eastmoney.com/api/qt/ulist.np/get";
+const QUOTE_API_URL = "http://push2.eastmoney.com/api/qt/ulist.np/get";
+const EASTMONEY_REFERRER = "http://quote.eastmoney.com/";
 
 const toNumber = (value: unknown): number | null => {
   if (value === "-" || value === "" || value === null || value === undefined) {
@@ -81,7 +82,14 @@ export const fetchMarketQuotes = async (
   });
 
   const response = await fetch(`${QUOTE_API_URL}?${query.toString()}`, {
-    headers: { "Cache-Control": "no-cache" },
+    cache: "no-store",
+    credentials: "omit",
+    headers: {
+      Accept: "application/json,text/plain,*/*",
+      "Cache-Control": "no-cache",
+    },
+    referrer: EASTMONEY_REFERRER,
+    referrerPolicy: "unsafe-url",
     signal,
   });
 
