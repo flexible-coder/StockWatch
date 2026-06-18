@@ -26,8 +26,10 @@ type EastMoneyIntradayPayload = {
   };
 };
 
-const INTRADAY_API_URL =
-  "http://push2.eastmoney.com/api/qt/stock/trends2/get";
+const INTRADAY_API_URLS = [
+  "http://push2.eastmoney.com/api/qt/stock/trends2/get",
+  "http://45.push2.eastmoney.com/api/qt/stock/trends2/get",
+];
 const EASTMONEY_REFERRER = "http://quote.eastmoney.com/";
 const RETRYABLE_STATUS_CODES = new Set([429, 500, 502, 503, 504]);
 const INTRADAY_RETRY_DELAY_MS = 300;
@@ -251,36 +253,70 @@ const waitForRetry = (signal?: AbortSignal): Promise<void> =>
     );
   });
 
+const createIntradayRequestInit = (
+  signal?: AbortSignal,
+  useReferrer = true,
+): RequestInit => ({
+    cache: "no-store",
+    credentials: "omit",
+    headers: {
+      Accept: "application/json,text/plain,*/*",
+      "Cache-Control": "no-cache",
+    },
+    ...(useReferrer
+      ? {
+          referrer: EASTMONEY_REFERRER,
+          referrerPolicy: "unsafe-url" as const,
+        }
+      : {}),
+    signal,
+  });
+
+const isAbortError = (error: unknown): boolean =>
+  error instanceof DOMException && error.name === "AbortError";
+
 const fetchIntradayResponse = async (
-  url: string,
+  queryString: string,
   signal?: AbortSignal,
 ): Promise<Response> => {
-  const response = await fetch(url, {
-    cache: "no-store",
-    credentials: "omit",
-    headers: {
-      Accept: "application/json,text/plain,*/*",
-      "Cache-Control": "no-cache",
-    },
-    referrer: EASTMONEY_REFERRER,
-    referrerPolicy: "unsafe-url",
-    signal,
-  });
+  let lastResponse: Response | null = null;
+  let lastError: unknown = null;
 
-  if (!RETRYABLE_STATUS_CODES.has(response.status)) return response;
+  for (const apiUrl of INTRADAY_API_URLS) {
+    const url = `${apiUrl}?${queryString}`;
 
-  await waitForRetry(signal);
-  return fetch(url, {
-    cache: "no-store",
-    credentials: "omit",
-    headers: {
-      Accept: "application/json,text/plain,*/*",
-      "Cache-Control": "no-cache",
-    },
-    referrer: EASTMONEY_REFERRER,
-    referrerPolicy: "unsafe-url",
-    signal,
-  });
+    for (const useReferrer of [true, false]) {
+      try {
+        const response = await fetch(
+          url,
+          createIntradayRequestInit(signal, useReferrer),
+        );
+        lastResponse = response;
+
+        if (!RETRYABLE_STATUS_CODES.has(response.status)) {
+          return response;
+        }
+
+        await waitForRetry(signal);
+        const retryResponse = await fetch(
+          url,
+          createIntradayRequestInit(signal, useReferrer),
+        );
+        lastResponse = retryResponse;
+
+        if (!RETRYABLE_STATUS_CODES.has(retryResponse.status)) {
+          return retryResponse;
+        }
+      } catch (error) {
+        if (isAbortError(error)) throw error;
+        lastError = error;
+      }
+    }
+  }
+
+  if (lastResponse) return lastResponse;
+  if (lastError instanceof Error) throw lastError;
+  throw new Error("Intraday request failed before receiving a response");
 };
 
 export const fetchIntradayData = async (
@@ -297,10 +333,7 @@ export const fetchIntradayData = async (
     iscca: "0",
   });
 
-  const response = await fetchIntradayResponse(
-    `${INTRADAY_API_URL}?${query.toString()}`,
-    signal,
-  );
+  const response = await fetchIntradayResponse(query.toString(), signal);
 
   if (!response.ok) {
     throw new Error(`Intraday request failed: ${response.status}`);

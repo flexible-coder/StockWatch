@@ -34,7 +34,10 @@
           type="button"
           @click.stop="selectWidgetStock(row.stock)"
         >
-          <span class="mini-stock-name">{{ row.stock.name }}</span>
+          <span class="mini-stock-main">
+            <span class="mini-stock-name">{{ row.stock.name }}</span>
+            <span class="mini-stock-price">{{ row.priceText }}</span>
+          </span>
           <span class="mini-stock-percent" :class="getTrendClassByPercent(row.percent)">
             {{ formatSignedPercent(row.percent) }}
           </span>
@@ -267,6 +270,10 @@ const getTrendClassByPercent = (percent: number): "up" | "down" | "flat" => {
   if (percent < 0) return "down";
   return "flat";
 };
+const formatMiniPrice = (price: number | null | undefined): string =>
+  typeof price === "number" && Number.isFinite(price) && price > 0
+    ? price.toFixed(2)
+    : "--";
 
 const trendClass = computed(() => getTrendClassByPercent(stockData.value.percent));
 const fallbackWatchlistStock = computed<WatchlistStock>(() => ({
@@ -283,10 +290,12 @@ const widgetRows = computed(() =>
   visibleWatchlist.value.map((stock, index) => {
     const quote = quoteBySecid.value[stock.secid];
     const percent = quote?.percent ?? (stock.secid === stockConfig.value.secid ? stockData.value.percent : 0);
+    const price = quote?.price ?? (stock.secid === stockConfig.value.secid ? stockData.value.price : null);
     return {
       stock,
       quote,
       percent,
+      priceText: formatMiniPrice(price),
       index,
     };
   }),
@@ -1290,7 +1299,16 @@ const fetchIntradayData = async () => {
     }
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") return;
-    console.error("获取分时数据失败:", error);
+    const quote = quoteBySecid.value[stockSecid];
+    if (quote) {
+      stockData.value.name = quote.name || stockConfig.value.name;
+      if (quote.price !== null) {
+        stockData.value.price = quote.price;
+      }
+      if (quote.percent !== null) {
+        stockData.value.percent = quote.percent;
+      }
+    }
   } finally {
     fetchController = null;
     isFetching.value = false;
@@ -1502,6 +1520,13 @@ onUnmounted(() => {
   background: rgba(255,255,255,0.6);
 }
 
+.mini-stock-main {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
 .mini-stock-name {
   min-width: 0;
   overflow: hidden;
@@ -1510,6 +1535,14 @@ onUnmounted(() => {
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.mini-stock-price {
+  flex: 0 0 auto;
+  color: #1890ff;
+  font-size: 10px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
 .mini-stock-percent {
